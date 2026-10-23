@@ -1,0 +1,20 @@
+[
+  {
+    "Id": "ffmpeg-minimal",
+    "Name": "精简版 FFmpeg（推荐）",
+    "Version": "8.1.3-minimal-1",
+    "Url": "https://github.com/WkJ01N/BiliDownload/releases/download/v0.1.2/ffmpeg-minimal-win-x64.zip",
+    "Sha256": "d6d207338b2f33beb39b671796109592ad324ae8860373f23fcadf1628168fb4",
+    "DownloadBytes": 17573193,
+    "InstalledBytes": 18492607
+  },
+  {
+    "Id": "ffmpeg-full",
+    "Name": "完整版 FFmpeg（通用工具）",
+    "Version": "8.1.3-5c4f5744cd",
+    "Url": "https://github.com/WkJ01N/BiliDownload/releases/download/v0.1.2/ffmpeg-full-win-x64.zip",
+    "Sha256": "918794f744cbcbcd77f81a9cf55874cd7831f8d81c34fe942b6f7e8c0118fa1f",
+    "DownloadBytes": 74032411,
+    "InstalledBytes": 151027060
+  }
+]

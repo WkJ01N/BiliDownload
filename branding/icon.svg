@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <title>BiliDownload — B and download arrow</title>
+  <rect width="512" height="512" rx="100" fill="#FF6699"/>
+  <!-- Bounds are centered at (256,256). The B stays joined at its upper-left and lower curve. -->
+  <g stroke="white" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M172 336 V136 H226"/>
+    <path d="M278 136 C304 136 324 160 324 190 V200 C324 228 304 248 278 248 M226 248 H200"/>
+    <path d="M278 248 C314 248 340 276 340 314 V322 C340 350 316 368 278 368 H196"/>
+    <path d="M252 76 V342 M252 394 V436 M214 398 L252 436 L290 398"/>
+  </g>
+</svg>

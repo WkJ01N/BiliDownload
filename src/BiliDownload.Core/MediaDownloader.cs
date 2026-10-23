@@ -18,7 +18,7 @@ public sealed class MediaDownloader : IDisposable
     public static async Task CheckFfmpegAsync(string executable, CancellationToken ct)
     {
         try { await RunAsync(executable, ["-version"], ct); }
-        catch (System.ComponentModel.Win32Exception) { throw new BiliException("找不到 FFmpeg，请在设置中选择 ffmpeg.exe，或将 FFmpeg 加入 PATH。"); }
+        catch (System.ComponentModel.Win32Exception) { throw new BiliException("找不到 FFmpeg，请到“设置 → 组件管理”下载安装，或配置已有 ffmpeg.exe 的路径。"); }
     }
 
     public async Task DownloadPartAsync(StreamPart part, string file, Action<double> progress, CancellationToken ct)

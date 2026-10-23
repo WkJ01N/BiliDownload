@@ -19,6 +19,7 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent(); ExtendsContentIntoTitleBar = true; SetTitleBar(TitleRegion);
+        AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1180, 820));
         ApplyTheme();
         Root.SizeChanged += (_, e) => TitleSubtitle.Visibility = e.NewSize.Width >= 720 ? Visibility.Visible : Visibility.Collapsed;

@@ -166,7 +166,7 @@ class MainActivity : ComponentActivity() {
                             item { Text("保存位置：${directory ?: "Movies/BiliDownload"}") }
                             item { Row { OutlinedButton(onClick = { picker.launch(null) }) { Text("选择目录") }; TextButton(onClick = { directory = null; prefs.edit().remove("directory").apply() }) { Text("恢复默认") } } }
                             item { Row { listOf("Default" to "系统", "Light" to "浅色", "Dark" to "深色").forEach { (value,label) -> TextButton(onClick = { theme = value; prefs.edit().putString("theme", value).apply() }) { Text(label) } } } }
-                            item { Text("BiliDownload · Android 预览版 0.1.1") }
+                            item { Text("BiliDownload · Android 预览版 0.1.2") }
                             item { TextButton(onClick = { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/WkJ01N/BiliDownload"))) }.onFailure { message = "无法打开浏览器，请访问 github.com/WkJ01N/BiliDownload。" } }) { Text("GitHub 仓库 · WkJ01N/BiliDownload") } }
                         }
                     }

@@ -2,7 +2,7 @@
 
 BiliDownload's own code is MIT licensed. Dependencies retain their respective licenses.
 
-- The Windows shell and default assets originate from Microsoft's Windows App SDK WinUI C# NavigationView template: https://github.com/microsoft/WindowsAppSDK (MIT).
+- The Windows shell originates from Microsoft's Windows App SDK WinUI C# NavigationView template: https://github.com/microsoft/WindowsAppSDK (MIT). The pink B/download application icon is an original project asset, based on the owner's reference, with editable SVG and platform export script in this repository (MIT).
 - Microsoft Windows App SDK / WinUI: https://github.com/microsoft/WindowsAppSDK and https://github.com/microsoft/microsoft-ui-xaml (MIT).
 - .NET runtime and Microsoft.Data.Sqlite: https://github.com/dotnet/runtime and https://github.com/dotnet/efcore (MIT); SQLite: https://sqlite.org/copyright.html (public domain).
 - QRCoder: https://github.com/codebude/QRCoder (MIT).
@@ -12,7 +12,7 @@ BiliDownload's own code is MIT licensed. Dependencies retain their respective li
 - Gson: https://github.com/google/gson (Apache-2.0).
 - Gradle Wrapper: https://github.com/gradle/gradle (Apache-2.0).
 
-Windows packages an LGPL-only FFmpeg executable under `app/tools/`. The original license, exact build configuration, matching source archive/source links and third-party notices accompany it under `docs/ffmpeg/`. The packaging script rejects builds configured with `--enable-gpl` or `--enable-nonfree`; this check does not replace preserving the build's original notices. FFmpeg source and license: https://ffmpeg.org/legal.html and https://github.com/FFmpeg/FFmpeg. Android uses the system MediaExtractor / MediaMuxer and does not bundle FFmpeg.
+Windows optionally installs LGPL-only FFmpeg under `app/tools/`. The minimal build is compiled from pinned FFmpeg source using `scripts/build-ffmpeg.sh`, without external codecs; the full build retains the existing BtbN provenance manifest. The original license, exact build configuration and matching source archive accompany installed tools under `docs/ffmpeg/`, and are also included in both downloadable component ZIPs. Components downloaded from settings are stored with their notices and source under the user's component directory. The packaging script rejects builds configured with `--enable-gpl` or `--enable-nonfree`; this check does not replace preserving the build's original notices. FFmpeg source and license: https://ffmpeg.org/legal.html and https://github.com/FFmpeg/FFmpeg. Android uses the system MediaExtractor / MediaMuxer and does not bundle FFmpeg.
 
 API behavior references used to independently implement parsing and signing:
 https://github.com/bilibili-plugins/bilibili-api-collect/tree/master/docs

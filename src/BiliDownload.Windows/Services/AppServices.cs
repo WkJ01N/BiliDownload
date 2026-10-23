@@ -12,6 +12,11 @@ public sealed class AppServices : IAsyncDisposable
     public BiliClient Bili { get; } = new();
     public AppSettings Settings { get; private set; }
     public DownloadQueue Queue { get; }
+    private readonly HttpClient componentHttp = new(new HttpClientHandler { UseCookies = false }) { Timeout = TimeSpan.FromMinutes(15) };
+    public ComponentInstaller Components { get; }
+    public IReadOnlyList<ComponentPackage> ComponentPackages { get; }
+    public string ResolveFfmpeg() => ToolPathResolver.Resolve(Settings.FfmpegPath, AppContext.BaseDirectory,
+        ComponentPackages.Select(Components.InstalledPath).FirstOrDefault(p => p != null));
     public AppServices(string? dataDirectory = null)
     {
         DataDirectory = dataDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BiliDownload");
@@ -29,7 +34,9 @@ public sealed class AppServices : IAsyncDisposable
             }
         }
         catch (Exception ex) when (ex is JsonException or CryptographicException or CookieException or IOException) { /* Recover using defaults or a fresh login. */ }
-        Queue = new(Bili, new TaskStore(DataDirectory), Path.Combine(DataDirectory, "cache"), () => ToolPathResolver.Resolve(Settings.FfmpegPath, AppContext.BaseDirectory));
+        Components = new(Path.Combine(DataDirectory, "components"), componentHttp);
+        ComponentPackages = JsonSerializer.Deserialize<ComponentPackage[]>(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Assets", "components.json"))) ?? [];
+        Queue = new(Bili, new TaskStore(DataDirectory), Path.Combine(DataDirectory, "cache"), ResolveFfmpeg);
     }
     private string SettingsFile => Path.Combine(DataDirectory, "settings.json");
     public void SaveSettings(AppSettings settings)
@@ -57,5 +64,5 @@ public sealed class AppServices : IAsyncDisposable
         var bundled = Path.Combine(AppContext.BaseDirectory, "tools", "ffmpeg.exe");
         return File.Exists(bundled) ? bundled : "ffmpeg";
     }
-    public async ValueTask DisposeAsync() { await Queue.DisposeAsync(); Bili.Dispose(); }
+    public async ValueTask DisposeAsync() { await Queue.DisposeAsync(); Bili.Dispose(); componentHttp.Dispose(); }
 }

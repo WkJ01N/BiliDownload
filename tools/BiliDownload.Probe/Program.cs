@@ -1,4 +1,18 @@
 using BiliDownload.Core;
+using System.Text.Json;
+
+if (args.FirstOrDefault() == "--verify-components")
+{
+    using var http = new HttpClient(new HttpClientHandler { UseCookies = false }) { Timeout = TimeSpan.FromMinutes(15) };
+    var packages = JsonSerializer.Deserialize<ComponentPackage[]>(await File.ReadAllTextAsync(args[1]))!;
+    var components = new ComponentInstaller(args[2], http);
+    foreach (var package in packages) {
+        var path = await components.InstallAsync(package);
+        await MediaDownloader.CheckFfmpegAsync(path, default);
+        Console.WriteLine("组件下载、SHA-256 校验、安装和启动成功：" + package.Id);
+    }
+    return 0;
+}
 
 if (args.FirstOrDefault() == "--verify-local") return await LocalVerification.RunAsync(args[1], args[2]);
 
