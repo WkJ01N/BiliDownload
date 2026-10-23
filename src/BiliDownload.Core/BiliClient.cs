@@ -74,6 +74,7 @@ public sealed partial class BiliClient : IMediaService, IDisposable
                 catalog = new(title, data.GetProperty("pages").EnumerateArray().Select((p, i) =>
                     new MediaItem($"video:{p.Num("cid")}", title, p.Str("part"), data.Str("pic"), MediaKind.Video,
                         data.Num("aid"), bvid, p.Num("cid"), 0, i + 1, $"https://www.bilibili.com/video/{bvid}?p={i + 1}")).ToArray());
+                catalog = catalog with { Items = catalog.Items.Select(i => i with { PartCount = catalog.Items.Count }).ToArray() };
                 var selectedPage = ParseQuery(uri).GetValueOrDefault("p");
                 var page = selectedPage == null ? 1 : int.TryParse(selectedPage, out var parsedPage) ? parsedPage : 0;
                 catalog = catalog with { TargetItemId = catalog.Items.FirstOrDefault(p => p.Index == page)?.Id };
@@ -105,6 +106,7 @@ public sealed partial class BiliClient : IMediaService, IDisposable
                         e.Str("cover", cover), kind, e.Num("aid"), e.Str("bvid"), e.Num("cid"), ep, i + 1,
                         $"https://www.bilibili.com/{(kind == MediaKind.Course ? "cheese" : "bangumi")}/play/ep{ep}");
                 }).ToArray());
+                catalog = catalog with { Items = catalog.Items.Select(i => i with { PartCount = catalog.Items.Count }).ToArray() };
                 if (prefix == "ep") catalog = catalog with { TargetItemId = catalog.Items.FirstOrDefault(e => e.EpisodeId.ToString() == id)?.Id };
             }
             else if (uri.Host.StartsWith("live."))

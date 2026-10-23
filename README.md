@@ -1,8 +1,8 @@
 # BiliDownload
 
-B 站视频下载与快捷分享工具，免费开源，完全在本地运行。Windows 使用 C# / .NET 10 / WinUI 3 官方导航模板；Android 使用 Kotlin / Jetpack Compose。
+B 站视频下载工具。Windows 使用 C# / .NET 10 / WinUI 3 官方导航模板；Android 使用 Kotlin / Jetpack Compose。
 
-## 当前版本：Windows 0.1.3 / Android 0.1.2 开发预览
+## 当前版本：Windows 0.1.4 / Android 0.1.4 开发预览
 
 - 导入完整视频链接、b23.tv 短链接、BV/av 号和分享文案；多链接及多 P、剧集、课程条目选择。
 - 普通投稿、番剧影视、课程的独立解析适配器；已发布为普通投稿的直播回放走投稿下载链路。
@@ -13,6 +13,12 @@ B 站视频下载与快捷分享工具，免费开源，完全在本地运行。
 
 这是开发预览版，尚未达到公开稳定版验收状态。当前开发环境真实 B 站接口探测返回 HTTP 412，因此普通投稿到番剧、课程的在线下载与登录尚未完成真实账号验证。Android 已通过构建、单元测试和 Lint 错误检查，本机没有连接设备或可用模拟器，后台生命周期、系统媒体合并以及微信/QQ 分享仍需设备实测。Windows 已完成启动及界面渲染检查、本地 HTTP 下载与 FFmpeg 合并检查。独立直播回放链接尚未适配；直播录制、音频单独导出、字幕、弹幕、压缩、收藏夹及 UP 主批量下载不在本预览版内。
 
+
+## 0.1.4 改进
+
+- 双端删除标题栏、解析页和下载页宣传文案。
+- 设置支持文件名模板、变量插入和实时预览；解析结果支持逐条改名及恢复默认。
+- 默认使用简洁名称，重名追加序号；任务保留入队时的名称，旧任务和已有视频保持兼容。
 
 ## Windows 0.1.3 改进
 
@@ -44,9 +50,9 @@ B 站视频下载与快捷分享工具，免费开源，完全在本地运行。
 
 ## 运行
 
-Windows 10 22H2 / Windows 11 x64：运行 `artifacts/BiliDownload-0.1.3-windows-x64-setup.exe` 安装，默认仅为当前用户安装，目录受限时申请管理员授权；主程序以普通权限运行。也可解压便携包 `artifacts/BiliDownload-0.1.3-windows-x64-portable.zip` 后运行根目录 `BiliDownload.exe`。根目录仅含启动程序、`app/` 和 `docs/`；运行时、WinUI 资源和 FFmpeg 位于 `app/`，文档及依赖许可位于 `docs/`。粘贴链接、解析、勾选条目后下载；在“已完成”中复制文件，再粘贴到支持文件粘贴的聊天应用。复制文件不保证聊天应用会将它当作内嵌视频发送。
+Windows 10 22H2 / Windows 11 x64：运行 `artifacts/BiliDownload-0.1.4-windows-x64-setup.exe` 安装，默认仅为当前用户安装，目录受限时申请管理员授权；主程序以普通权限运行。也可解压便携包 `artifacts/BiliDownload-0.1.4-windows-x64-portable.zip` 后运行根目录 `BiliDownload.exe`。根目录仅含启动程序、`app/` 和 `docs/`；运行时、WinUI 资源和 FFmpeg 位于 `app/`，文档及依赖许可位于 `docs/`。粘贴链接、解析、勾选条目后下载；在“已完成”中复制文件，再粘贴到支持文件粘贴的聊天应用。复制文件不保证聊天应用会将它当作内嵌视频发送。
 
-Android 10+：安装 `artifacts/android/BiliDownload-0.1.2-preview.apk`。这是使用开发调试密钥签名的预览包，正式公开发行前需要配置专用发布签名。可从 B 站分享给本应用，也可粘贴链接。下载默认保存至 `Movies/BiliDownload`，设置中可通过系统目录选择器改变位置。通过“分享视频”选择接收应用。
+Android 10+：安装 `artifacts/android/BiliDownload-0.1.4-preview.apk`。这是使用开发调试密钥签名的预览包，正式公开发行前需要配置专用发布签名。可从 B 站分享给本应用，也可粘贴链接。下载默认保存至 `Movies/BiliDownload`，设置中可通过系统目录选择器改变位置。通过“分享视频”选择接收应用。
 
 Windows 后台监听默认开启，升级首次启动会说明新增行为并提供关闭入口，此后保留用户选择。关闭窗口可选择进入托盘或退出，退出后停止监听。Windows 通知受系统通知设置与勿扰模式影响，主程序须以普通权限运行。Android 剪贴板识别仍默认关闭；系统限制后台读取，快捷方式和快捷设置磁贴会先打开本应用再读取。应用没有开机自启和遥测。
 
@@ -61,7 +67,7 @@ dotnet test tests/BiliDownload.Tests/BiliDownload.Tests.csproj
 ./scripts/build-windows.ps1 -FfmpegDirectory C:/path/to/lgpl-tools
 ```
 
-发布目录 `artifacts/windows-0.1.3/` 包含 .NET 和 Windows App SDK 运行时。自包含部署不使用裁剪，避免破坏 XAML 绑定与 SQLite。安装器、便携 ZIP 使用同一目录结构；升级、卸载保留 `%LOCALAPPDATA%/BiliDownload` 中的设置与历史以及用户视频。`-SkipInstaller` 可仅构建便携包。`scripts/test-windows-ui.ps1` 验证窄窗口操作栏，`scripts/test-installer.ps1` 使用独立 QA 安装标识验证安装和卸载，不替换用户安装。`scripts/test-install-directory.ps1` 检查原生目录助手与发布结构；`pwsh -STA -File scripts/test-installer-ui.ps1` 检查中英文向导；`pwsh -STA -File scripts/test-windows-background.ps1` 使用重命名的隔离 QA 程序和本地接口验证后台流程，需要 Python 3 和 Windows Media Foundation。
+发布目录 `artifacts/windows-0.1.4/` 包含 .NET 和 Windows App SDK 运行时。自包含部署不使用裁剪，避免破坏 XAML 绑定与 SQLite。安装器、便携 ZIP 使用同一目录结构；升级、卸载保留 `%LOCALAPPDATA%/BiliDownload` 中的设置与历史以及用户视频。`-SkipInstaller` 可仅构建便携包。`scripts/test-windows-ui.ps1` 验证窄窗口操作栏，`scripts/test-installer.ps1` 使用独立 QA 安装标识验证安装和卸载，不替换用户安装。`scripts/test-install-directory.ps1` 检查原生目录助手与发布结构；`pwsh -STA -File scripts/test-installer-ui.ps1` 检查中英文向导；`pwsh -STA -File scripts/test-windows-background.ps1` 使用重命名的隔离 QA 程序和本地接口验证后台流程，需要 Python 3 和 Windows Media Foundation。
 
 Android 需要 JDK 21、Android SDK Platform 36 / Build Tools 36.0.0。设置 `ANDROID_HOME`，或在 `android/local.properties` 配置本机 `sdk.dir`（该文件不提交）。
 
@@ -92,3 +98,9 @@ dotnet run --project tools/BiliDownload.Probe -- --verify-local C:/path/to/fixtu
 需要在用户本机网络与测试账号下验证：游客和登录画质、扫码与网页登录、番剧/已购课程完整访问、短链接跳转、长视频断点恢复、下载取消与磁盘不足、Android 10/13/14+ 后台行为、MP4 音画同步、微信和 QQ 文件接收。受保护的视频源或仅能获取试看内容时，会明确失败。
 
 项目代码采用 MIT；依赖及媒体工具说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+### 文件命名（0.1.4）
+
+两端设置页可编辑默认文件名模板，默认 `{name}`；解析结果中可逐条修改名称或恢复默认。支持 `{name}`（默认名称）、`{title}`（视频标题）、`{part}`（分项标题）、`{index}`（序号）、`{bvid}` 和 `{id}`。例如 `{title} - {index} - {part}`。扩展名 `.mp4` 自动添加；非法字符会替换为下划线，重名追加序号，不覆盖已有文件。
+
+单 P 默认仅用标题，多 P／剧集／课程使用标题、P 序号及不重复的分项标题。判断依据为完整目录，而非勾选数量。Windows 通知自动下载使用当前模板；入队后的名称固定，暂停、重试和重启均保留。旧任务沿用旧命名规则，已下载文件不会被重命名。

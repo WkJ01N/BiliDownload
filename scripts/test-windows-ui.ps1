@@ -1,7 +1,7 @@
 param([string]$PackageDirectory)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-if (-not $PackageDirectory) { $PackageDirectory = Join-Path $projectRoot 'artifacts/windows-0.1.3' }
+if (-not $PackageDirectory) { $PackageDirectory = Join-Path $projectRoot 'artifacts/windows-0.1.4' }
 $results = Join-Path $projectRoot ('.build/ui-validation/' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force $results | Out-Null
 $cases = @(@(480,'completed','Completed'),@(600,'completed','Completed'),@(900,'completed','Completed'),@(1180,'completed','Completed'),@(480,'queue','Queued'),@(480,'queue','Downloading'),@(480,'queue','Merging'),@(480,'queue','Paused'),@(480,'queue','Failed'),@(480,'queue','Canceled'),@(360,'completed','Completed'),@(360,'queue','Failed'),@(900,'settings','Completed'))

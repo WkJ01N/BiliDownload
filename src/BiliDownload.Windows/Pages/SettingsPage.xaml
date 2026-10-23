@@ -16,6 +16,14 @@
    <TextBox x:Name="FfmpegBox" Header="FFmpeg 程序路径" PlaceholderText="ffmpeg 或 ffmpeg.exe 的完整路径"/>
    <TextBlock Text="有效的自定义路径会被保留。未安装 FFmpeg 时仍可解析链接，下载合并前需安装组件或配置已有工具。" Opacity="0.6" TextWrapping="Wrap"/>
   </StackPanel></Border>
+  <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="8" Padding="20"><StackPanel Spacing="12">
+   <TextBlock Text="文件命名" Style="{StaticResource SubtitleTextBlockStyle}"/>
+   <TextBox x:Name="NamingTemplate" Header="默认文件名模板" TextChanged="Naming_Changed"/>
+   <TextBlock Text="变量：name 默认名称；title 视频标题；part 分项标题；index 序号；bvid BV号；id 条目编号。扩展名 .mp4 自动添加。" TextWrapping="Wrap"/>
+   <ItemsControl x:Name="NamingVariables"><ItemsControl.ItemTemplate><DataTemplate><Button Content="{Binding}" Click="InsertVariable_Click" Margin="0,2"/></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+   <TextBlock x:Name="NamingPreview" TextWrapping="Wrap"/>
+   <Button Content="恢复默认命名" Click="ResetNaming_Click"/>
+  </StackPanel></Border>
   <ToggleSwitch x:Name="DetectSwitch" Header="窗口获得焦点时识别剪贴板" OffContent="关闭" OnContent="开启"/>
   <ToggleSwitch x:Name="MonitorSwitch" Header="程序运行时监听剪贴板" OffContent="关闭" OnContent="开启"/>
   <ToggleSwitch x:Name="AutoDownloadSwitch" AutomationProperties.AutomationId="AutoDownloadSwitch" Header="点击通知后自动下载" OffContent="先解析，确认后下载" OnContent="下载链接指定的单项"/>
@@ -26,7 +34,7 @@
   <ComboBox x:Name="ThemeBox" Header="外观" SelectedValuePath="Tag"><ComboBoxItem Content="跟随系统" Tag="Default"/><ComboBoxItem Content="浅色" Tag="Light"/><ComboBoxItem Content="深色" Tag="Dark"/></ComboBox>
   <Button Content="保存设置" Style="{StaticResource AccentButtonStyle}" Click="Save_Click"/>
   <InfoBar x:Name="Notice" IsOpen="False"/>
-  <TextBlock Text="BiliDownload · Windows 预览版 0.1.3" Opacity="0.6"/>
+  <TextBlock Text="BiliDownload · Windows 预览版 0.1.4" Opacity="0.6"/>
   <HyperlinkButton Content="GitHub 仓库 · WkJ01N/BiliDownload" NavigateUri="https://github.com/WkJ01N/BiliDownload" Padding="0,8" HorizontalAlignment="Left"/>
  </StackPanel></ScrollViewer>
 </Page>

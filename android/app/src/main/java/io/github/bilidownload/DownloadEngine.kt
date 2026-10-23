@@ -62,10 +62,10 @@ class DownloadEngine(private val context: Context) {
                 val output = File(directory, "merged.mp4")
                 mux(videos, audio, output)
                 currentCoroutineContext().ensureActive()
-                val filename = Links.safeName("${entry.item.title} P${entry.item.index} ${entry.item.partTitle}") + " [${entry.item.id.replace(':', '-')}-${id.take(6)}].mp4"
+                val filename = entry.outputFileName ?: (Links.safeName("${entry.item.title} P${entry.item.index} ${entry.item.partTitle}") + " [${entry.item.id.replace(':', '-')}-${id.take(6)}].mp4")
                 val uri = publish(output, filename)
                 // Publication is a short atomic step from the user's perspective. Keep its URI even if cancellation arrives now.
-                BiliApplication.store.update(id) { it.copy(state = "Completed", progress = 1f, message = "下载完成", uri = uri.toString()) }
+                BiliApplication.store.update(id) { it.copy(state = "Completed", progress = 1f, message = "下载完成", uri = uri.toString(), finalFileName = runCatching { resolverName(uri) }.getOrNull() ?: filename) }
                 BiliApplication.store.get(id)?.let(notify)
                 directory.deleteRecursively()
             } catch (e: CancellationException) { update("Paused", message = "已暂停，可继续"); throw e }
@@ -173,9 +173,17 @@ class DownloadEngine(private val context: Context) {
             muxer.stop(); started = false
         } finally { if(started) runCatching { muxer.stop() }; muxer.release() }
     }
-    private fun publish(file: File, name: String): Uri {
+    private val publishLock = Any()
+    private fun resolverName(uri: Uri): String? = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { if(it.moveToFirst()) it.getString(0) else null }
+    private fun publish(file: File, requested: String): Uri = synchronized(publishLock) {
+        var name = requested
         val resolver = context.contentResolver
         val tree = context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("directory", null)
+        val occupied = mutableSetOf<String>()
+        if(tree != null) DocumentFile.fromTreeUri(context, Uri.parse(tree))?.listFiles()?.mapNotNullTo(occupied) { it.name }
+        else resolver.query(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, arrayOf(MediaStore.Video.Media.DISPLAY_NAME), "${MediaStore.Video.Media.RELATIVE_PATH} = ?", arrayOf(Environment.DIRECTORY_MOVIES + "/BiliDownload/"), null)?.use { c -> while(c.moveToNext()) occupied += c.getString(0) }
+        var suffix = 0
+        while(name in occupied) { suffix++; name = FileNaming.candidate(requested, suffix) }
         val uri = if(tree != null) DocumentFile.fromTreeUri(context, Uri.parse(tree))?.createFile("video/mp4", name)?.uri ?: throw IOException("目标目录不可写")
         else resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, ContentValues().apply {
             put(MediaStore.Video.Media.DISPLAY_NAME, name); put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
@@ -184,7 +192,7 @@ class DownloadEngine(private val context: Context) {
         try {
             resolver.openOutputStream(uri, "w")?.use { output -> file.inputStream().use { it.copyTo(output) } } ?: throw IOException("无法写入目录")
             if(tree == null) resolver.update(uri, ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }, null, null)
-            return uri
+            uri
         } catch (e: Exception) { if(tree == null) resolver.delete(uri, null, null) else DocumentFile.fromSingleUri(context, uri)?.delete(); throw e }
     }
 }

@@ -10,6 +10,7 @@ public sealed class DownloadTaskViewModel(DownloadTaskData data) : INotifyProper
     public MediaItem Item => Data.Item;
     public double Progress => Data.Progress;
     public string Message => Data.Message;
+    public string FileName => Data.FinalFileName ?? Data.OutputFileName ?? (Data.FilePath != null ? Path.GetFileName(Data.FilePath) : "");
     public bool CanPause => Data.State is DownloadState.Queued or DownloadState.Downloading or DownloadState.Merging;
     public bool CanResume => Data.State is DownloadState.Paused or DownloadState.Failed;
     public bool CanCancel => Data.State is not (DownloadState.Completed or DownloadState.Canceled);

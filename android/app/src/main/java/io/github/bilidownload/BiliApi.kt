@@ -81,7 +81,7 @@ class BiliApi(private val session: Session) {
             if (video != null) {
                 val id = video.groupValues[1]
                 val data = api("https://api.bilibili.com/x/web-interface/view?" + if (id.startsWith("av")) "aid=${id.drop(2)}" else "bvid=$id")
-                data.getJSONArray("pages").objects().forEachIndexed { index, p -> items += MediaItem("video:${p.getLong("cid")}", data.getString("title"), p.optString("part"), "video", data.getLong("aid"), data.getString("bvid"), p.getLong("cid"), 0, index + 1, data.optString("pic")) }
+                data.getJSONArray("pages").objects().forEachIndexed { index, p -> items += MediaItem("video:${p.getLong("cid")}", data.getString("title"), p.optString("part"), "video", data.getLong("aid"), data.getString("bvid"), p.getLong("cid"), 0, index + 1, data.optString("pic"), data.getJSONArray("pages").length()) }
             } else if (path.contains("/bangumi/") || path.contains("/cheese/")) {
                 val match = Regex("/(ep|ss|md)([0-9]+)").find(path) ?: throw BiliException("请提供分集或系列播放链接。")
                 var prefix = match.groupValues[1]; var id = match.groupValues[2]
@@ -91,7 +91,7 @@ class BiliApi(private val session: Session) {
                 val data = api("https://api.bilibili.com/$endpoint?${if(prefix == "ep") "ep_id" else "season_id"}=$id")
                 val episodes = data.optJSONArray("episodes").objects().toMutableList()
                 data.optJSONArray("section").objects().forEach { episodes += it.optJSONArray("episodes").objects() }
-                episodes.distinctBy { it.optLong("id") }.forEachIndexed { index, e -> items += MediaItem("$kind:${e.getLong("id")}", data.getString("title"), "${e.optString("title")} ${e.optString("long_title")}".trim(), kind, e.optLong("aid"), e.optString("bvid"), e.optLong("cid"), e.getLong("id"), index + 1, e.optString("cover", data.optString("cover"))) }
+                episodes.distinctBy { it.optLong("id") }.forEachIndexed { index, e -> items += MediaItem("$kind:${e.getLong("id")}", data.getString("title"), "${e.optString("title")} ${e.optString("long_title")}".trim(), kind, e.optLong("aid"), e.optString("bvid"), e.optLong("cid"), e.getLong("id"), index + 1, e.optString("cover", data.optString("cover")), episodes.distinctBy { it.optLong("id") }.size) }
             } else throw BiliException("请提供视频、番剧、课程或已发布回放的视频链接；首版不录制直播。")
         }
         return items.distinctBy { it.id }.ifEmpty { throw BiliException("没有找到可下载条目。") }

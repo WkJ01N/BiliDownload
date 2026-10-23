@@ -67,6 +67,12 @@ class MainActivity : ComponentActivity() {
             var quality by rememberSaveable { mutableIntStateOf(80) }
             var detect by remember { mutableStateOf(prefs.getBoolean("detect", false)) }
             var directory by remember { mutableStateOf(prefs.getString("directory", null)) }
+            var namingTemplate by rememberSaveable { mutableStateOf(prefs.getString("filenameTemplate", FileNaming.DEFAULT) ?: FileNaming.DEFAULT) }
+            var namingDraft by rememberSaveable { mutableStateOf(namingTemplate) }
+            var customNamesJson by rememberSaveable { mutableStateOf("{}") }
+            fun customNames(): Map<String, String> = Gson().fromJson(customNamesJson, object : TypeToken<Map<String, String>>() {}.type)
+            var renameId by rememberSaveable { mutableStateOf<String?>(null) }
+            var renameText by rememberSaveable { mutableStateOf("") }
             var qualityOpen by remember { mutableStateOf(false) }
             var failureKind by rememberSaveable { mutableStateOf<String?>(null) }
             var retryParse by rememberSaveable { mutableStateOf(false) }
@@ -89,7 +95,7 @@ class MainActivity : ComponentActivity() {
                 val oldQuality = if(parsedInput == requestInput) quality else null
                 scope.launch {
                     loading = true; message = ""; failureKind = null; retryParse = false
-                    if(parsedInput != requestInput) { media = emptyList(); variants = emptyList(); selected = emptySet() }
+                    if(parsedInput != requestInput) { customNamesJson = "{}"; media = emptyList(); variants = emptyList(); selected = emptySet() }
                     try {
                         val resolved = BiliApplication.api.resolve(requestInput)
                         media = resolved; parsedInput = requestInput
@@ -106,6 +112,19 @@ class MainActivity : ComponentActivity() {
                 if(uri != null) { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION); directory = uri.toString(); prefs.edit().putString("directory", directory).apply() }
             }
             LaunchedEffect(Unit) { if(Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS) }
+            renameId?.let { id ->
+                fun finish(custom: String?) {
+                    val updated = customNames().toMutableMap()
+                    if(custom == null) updated.remove(id) else updated[id] = FileNaming.normalize(custom)
+                    customNamesJson = Gson().toJson(updated); renameId = null
+                }
+                AlertDialog(onDismissRequest = { renameId = null }, title = { Text("修改文件名") }, text = { Column {
+                    OutlinedTextField(value = renameText, onValueChange = { renameText = it }, label = { Text("文件名（自动添加 .mp4）") })
+                    Text("实际文件名：" + FileNaming.normalize(renameText))
+                } }, confirmButton = { TextButton(onClick = { finish(renameText) }) { Text("保存") } }, dismissButton = { Row {
+                    TextButton(onClick = { finish(null) }) { Text("恢复默认") }; TextButton(onClick = { renameId = null }) { Text("取消") }
+                } })
+            }
             Scaffold(modifier = Modifier.fillMaxSize(), topBar = { TopAppBar(title = { Text("BiliDownload") }) }, bottomBar = {
                 NavigationBar { listOf("解析", "下载", "已完成", "设置").forEachIndexed { i, text -> NavigationBarItem(selected = tab == i, onClick = { tab = i }, icon = { Icon(painterResource(listOf(R.drawable.ic_link, R.drawable.ic_download, R.drawable.ic_complete, R.drawable.ic_settings)[i]), contentDescription = text) }, label = { Text(text) }) } }
             }) { padding ->
@@ -122,7 +141,7 @@ class MainActivity : ComponentActivity() {
                     } } }
                     when(activeTab) {
                         0 -> {
-                            item { Text("保存视频，方便分享", style = MaterialTheme.typography.headlineSmall) }
+                            item { Text("链接解析", style = MaterialTheme.typography.headlineSmall) }
                             item { OutlinedTextField(value = input, onValueChange = { input = it }, label = { Text("B 站链接或分享文案") }, minLines = 3, maxLines = 6, modifier = Modifier.fillMaxWidth()) }
                             item { Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Button(enabled = !loading, onClick = { parseLinks() }) { Text(if(loading) "解析中…" else "解析链接") }
@@ -135,11 +154,11 @@ class MainActivity : ComponentActivity() {
                                 item { Button(enabled = selected.isNotEmpty() && variants.isNotEmpty() && !loading && !retryParse, onClick = {
                                     try {
                                         media.filter { it.id in selected }.forEach { item ->
-                                            if(entries.none { it.item.id == item.id && it.quality == quality && it.state !in listOf("Failed", "Canceled") }) DownloadActions.schedule(this@MainActivity, DownloadEntry(UUID.randomUUID().toString(), item, quality))
+                                            if(entries.none { it.item.id == item.id && it.quality == quality && it.state !in listOf("Failed", "Canceled") }) DownloadActions.schedule(this@MainActivity, DownloadEntry(UUID.randomUUID().toString(), item, quality, outputFileName = FileNaming.render(item, namingTemplate, customNames()[item.id])))
                                         }; message = "已加入下载队列"; tab = 1
                                     } catch(e: Exception) { message = if(e is BiliException) e.message.orEmpty() else "系统暂时无法开始下载，请保持应用可见后重试。" }
                                 }) { Text("下载选中内容") } }
-                                items(media, key = { it.id }) { item -> Card { Column { Cover(item.cover); Row(Modifier.padding(12.dp)) { Checkbox(checked = item.id in selected, onCheckedChange = { selected = if(it) selected + item.id else selected - item.id }); Column { Text(item.title, style = MaterialTheme.typography.titleMedium); Text(item.partTitle) } } } } }
+                                items(media, key = { it.id }) { item -> Card { Column { Cover(item.cover); Row(Modifier.padding(12.dp)) { Checkbox(checked = item.id in selected, onCheckedChange = { selected = if(it) selected + item.id else selected - item.id }); Column { Text(item.title, style = MaterialTheme.typography.titleMedium); Text(item.partTitle); Text(FileNaming.render(item, namingTemplate, customNames()[item.id])); TextButton(onClick = { renameId = item.id; renameText = FileNaming.render(item, namingTemplate, customNames()[item.id]).removeSuffix(".mp4") }) { Text("修改文件名") } } } } } }
                             }
                         }
                         1, 2 -> {
@@ -147,7 +166,7 @@ class MainActivity : ComponentActivity() {
                             item { Text(if(activeTab == 1) "下载队列" else "已完成", style = MaterialTheme.typography.headlineSmall) }
                             if(list.isEmpty()) item { Text("还没有任务，先去解析一个链接吧。") }
                             items(list, key = { it.id }) { entry -> Card { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text(entry.item.title, style = MaterialTheme.typography.titleMedium); Text(entry.item.partTitle); LinearProgressIndicator(progress = { entry.progress }, modifier = Modifier.fillMaxWidth()); Text(entry.message)
+                                Text(entry.item.title, style = MaterialTheme.typography.titleMedium); Text(entry.item.partTitle); (entry.finalFileName ?: entry.outputFileName)?.let { Text(it) }; LinearProgressIndicator(progress = { entry.progress }, modifier = Modifier.fillMaxWidth()); Text(entry.message)
                                 if(entry.state == "Completed") Button(onClick = { try { startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("video/mp4").putExtra(Intent.EXTRA_STREAM, Uri.parse(entry.uri)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION).apply { clipData = ClipData.newRawUri("video", Uri.parse(entry.uri)) }, "分享视频")) } catch(e: Exception) { message = "文件无法分享，请确认文件仍然存在。" } }) { Text("分享视频") }
                                 else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     if(entry.state == "Failed" && AuthRecovery.needsLogin(entry.failureKind, BiliApplication.session.state)) TextButton(onClick = { launchLogin(entry.id) }) { Text("登录 B 站") }
@@ -163,10 +182,19 @@ class MainActivity : ComponentActivity() {
                             item { Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) { Button(onClick = { launchLogin() }) { Text("登录 B 站") }; OutlinedButton(onClick = { BiliApplication.session.clear(); android.webkit.CookieManager.getInstance().removeAllCookies(null); message = "已退出登录" }) { Text("退出登录") } } }
                             item { Row { Switch(checked = detect, onCheckedChange = { detect = it; prefs.edit().putBoolean("detect", it).apply() }); Text("切回应用时识别剪贴板", Modifier.padding(12.dp)) } }
                             item { Text("可从 B 站分享给本应用，也可添加“识别 B 站链接”快捷设置磁贴。后台读取剪贴板受 Android 系统限制。") }
+                            item { Text("文件命名", style = MaterialTheme.typography.titleMedium) }
+                            item { OutlinedTextField(value = namingDraft, onValueChange = { namingDraft = it }, label = { Text("默认文件名模板") }, modifier = Modifier.fillMaxWidth()) }
+                            item { Text("变量：name 默认名称；title 视频标题；part 分项标题；index 序号；bvid BV号；id 条目编号。扩展名 .mp4 自动添加。") }
+                            item { Column { FileNaming.variables.chunked(3).forEach { row -> Row { row.forEach { variable -> TextButton(onClick = { namingDraft += "{$variable}" }) { Text("{$variable}") } } } } } }
+                            item {
+                                val error = runCatching { FileNaming.validate(namingDraft) }.exceptionOrNull()?.message
+                                Text(error ?: "预览：" + FileNaming.render(MediaItem("video:123", "示例视频", "第二部分", "video", 1, "BV1xx411c7mD", 123, 0, 2, partCount = 3), namingDraft))
+                                Row { TextButton(enabled = error == null, onClick = { namingTemplate = namingDraft; prefs.edit().putString("filenameTemplate", namingTemplate).apply(); message = "文件名模板已保存" }) { Text("保存命名设置") }; TextButton(onClick = { namingDraft = FileNaming.DEFAULT }) { Text("恢复默认") } }
+                            }
                             item { Text("保存位置：${directory ?: "Movies/BiliDownload"}") }
                             item { Row { OutlinedButton(onClick = { picker.launch(null) }) { Text("选择目录") }; TextButton(onClick = { directory = null; prefs.edit().remove("directory").apply() }) { Text("恢复默认") } } }
                             item { Row { listOf("Default" to "系统", "Light" to "浅色", "Dark" to "深色").forEach { (value,label) -> TextButton(onClick = { theme = value; prefs.edit().putString("theme", value).apply() }) { Text(label) } } } }
-                            item { Text("BiliDownload · Android 预览版 0.1.2") }
+                            item { Text("BiliDownload · Android 预览版 0.1.4") }
                             item { TextButton(onClick = { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/WkJ01N/BiliDownload"))) }.onFailure { message = "无法打开浏览器，请访问 github.com/WkJ01N/BiliDownload。" } }) { Text("GitHub 仓库 · WkJ01N/BiliDownload") } }
                         }
                     }

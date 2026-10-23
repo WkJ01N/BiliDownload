@@ -1,13 +1,13 @@
 <Page x:Class="BiliDownload_Windows.Pages.QueuePage" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:BiliDownload_Windows.ViewModels">
  <Grid Padding="32,24" RowSpacing="18"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-  <StackPanel Spacing="8"><TextBlock x:Name="PageTitle" Text="下载队列" Style="{StaticResource TitleTextBlockStyle}"/><TextBlock Text="下载后保存在本机。复制视频文件，即可尝试粘贴到聊天应用。" Opacity="0.65" TextWrapping="Wrap"/></StackPanel>
+  <StackPanel Spacing="8"><TextBlock x:Name="PageTitle" Text="下载队列" Style="{StaticResource TitleTextBlockStyle}"/></StackPanel>
   <InfoBar x:Name="Notice" Grid.Row="1" IsOpen="False"/>
   <Grid Grid.Row="2"><TextBlock x:Name="Empty" Text="还没有下载任务，先去解析一个链接吧。" Opacity="0.6" Margin="0,20"/>
   <ListView x:Name="Tasks" SelectionMode="None" HorizontalContentAlignment="Stretch">
    <ListView.ItemContainerStyle><Style TargetType="ListViewItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style></ListView.ItemContainerStyle>
    <ListView.ItemTemplate><DataTemplate x:DataType="vm:DownloadTaskViewModel">
     <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="18" Margin="0,0,0,12">
-     <StackPanel Spacing="10"><TextBlock Text="{Binding Item.Title}" FontWeight="SemiBold" TextWrapping="Wrap"/><TextBlock Text="{Binding Item.PartTitle}" Opacity="0.6" TextWrapping="Wrap"/><ProgressBar Value="{Binding Progress}" Maximum="100"/><TextBlock Text="{Binding Message}" TextWrapping="Wrap"/>
+     <StackPanel Spacing="10"><TextBlock Text="{Binding Item.Title}" FontWeight="SemiBold" TextWrapping="Wrap"/><TextBlock Text="{Binding Item.PartTitle}" Opacity="0.6" TextWrapping="Wrap"/><TextBlock Text="{Binding FileName}" TextWrapping="Wrap" Opacity="0.75"/><ProgressBar Value="{Binding Progress}" Maximum="100"/><TextBlock Text="{Binding Message}" TextWrapping="Wrap"/>
       <CommandBar DefaultLabelPosition="Right" IsDynamicOverflowEnabled="True" HorizontalAlignment="Stretch" Background="Transparent">
        <AppBarButton Label="登录 B 站" Tag="{x:Bind}" Visibility="{x:Bind LoginVisibility, Mode=OneWay}" Click="Login_Click" Icon="Contact"/>
        <AppBarButton Label="暂停" Tag="{x:Bind}" Visibility="{x:Bind PauseVisibility, Mode=OneWay}" Click="Pause_Click" Icon="Pause"/>

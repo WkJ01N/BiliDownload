@@ -12,8 +12,36 @@ public sealed partial class HomePage : Page
     private CancellationTokenSource? parsing;
     private string? lastInput;
     private bool clipboardMode;
+    private readonly Dictionary<string, string> names = new();
+    private MediaItem[] resolvedItems = [];
+    public sealed record ResultRow(MediaItem Item, string FileName) {
+        public string Id => Item.Id;
+        public string Title => Item.Title;
+        public string PartTitle => Item.PartTitle;
+        public string Cover => Item.Cover;
+    }
+    private void RefreshNames() {
+        var ids = Results.SelectedItems.Cast<ResultRow>().Select(r => r.Id).ToHashSet();
+        Results.ItemsSource = resolvedItems.Select(i => new ResultRow(i, FileNaming.Render(i, App.Services.Settings.FileNameTemplate, names.GetValueOrDefault(i.Id)))).ToArray();
+        foreach (var row in Results.Items.Cast<ResultRow>().Where(r => ids.Contains(r.Id))) Results.SelectedItems.Add(row);
+    }
+    private async void Rename_Click(object sender, RoutedEventArgs e) {
+        var id = (string)((Button)sender).Tag;
+        var item = resolvedItems.First(i => i.Id == id);
+        var box = new TextBox { Text = Path.GetFileNameWithoutExtension(FileNaming.Render(item, App.Services.Settings.FileNameTemplate, names.GetValueOrDefault(id))), Header = "文件名（自动添加 .mp4）", AcceptsReturn = false };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(box, "RenameFileName");
+        var preview = new TextBlock { TextWrapping = TextWrapping.Wrap };
+        void Update() => preview.Text = "实际文件名：" + FileNaming.Normalize(box.Text);
+        box.TextChanged += (_, _) => Update(); Update();
+        var panel = new StackPanel { Spacing = 12 }; panel.Children.Add(box); panel.Children.Add(preview);
+        var dialog = new ContentDialog { XamlRoot = XamlRoot, Title = "修改文件名", Content = panel, PrimaryButtonText = "保存", SecondaryButtonText = "恢复默认", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Primary };
+        var result = await DialogCoordinator.ShowAsync(dialog);
+        if (result == ContentDialogResult.Primary) names[id] = FileNaming.Normalize(box.Text);
+        else if (result == ContentDialogResult.Secondary) names.Remove(id);
+        RefreshNames();
+    }
     public HomePage() { InitializeComponent(); NavigationCacheMode = NavigationCacheMode.Enabled; }
-    protected override void OnNavigatedTo(NavigationEventArgs e) { if (e.Parameter is string text && text != "home") LinkInput.Text = text; }
+    protected override void OnNavigatedTo(NavigationEventArgs e) { if (e.Parameter is string text && text != "home") LinkInput.Text = text; if (resolvedItems.Length > 0) RefreshNames(); }
     protected override void OnNavigatedFrom(NavigationEventArgs e) => CancelPending();
     public void CancelPending() => parsing?.Cancel();
     private async void Parse_Click(object sender, RoutedEventArgs e) => await ParseAsync(ReferenceEquals(sender, RetryButton) && clipboardMode);
@@ -37,21 +65,23 @@ public sealed partial class HomePage : Page
         clipboardMode = fromClipboard;
         var requestInput = LinkInput.Text;
         var sameInput = preserveSelection && lastInput == requestInput;
-        var previousIds = sameInput ? Results.SelectedItems.Cast<MediaItem>().Select(i => i.Id).ToHashSet() : null;
+        var previousIds = sameInput ? Results.SelectedItems.Cast<ResultRow>().Select(r => r.Item).Select(i => i.Id).ToHashSet() : null;
         var previousQuality = sameInput ? (QualityBox.SelectedItem as MediaVariant)?.Quality : null;
         Busy.IsActive = true; ParseButton.IsEnabled = Results.IsEnabled = DownloadButton.IsEnabled = false; Notice.IsOpen = false;
         LoginButton.Visibility = RetryButton.Visibility = ComponentButton.Visibility = Visibility.Collapsed; RetryButton.IsEnabled = false;
-        if (!sameInput) { Results.ItemsSource = null; QualityBox.ItemsSource = null; }
+        if (!sameInput) { names.Clear(); resolvedItems = []; Results.ItemsSource = null; QualityBox.ItemsSource = null; }
         try
         {
             var catalogs = await App.Services.Bili.ResolveAsync(requestInput, ct); ct.ThrowIfCancellationRequested();
             var items = fromClipboard ? ClipboardPolicy.VisibleItems(App.Services.Settings, catalogs).ToArray() : catalogs.SelectMany(c => c.Items).DistinctBy(i => i.Id).ToArray();
             if (items.Length == 0) throw new BiliException("链接指定的条目已不可用，请重新解析或选择其他内容。");
-            Results.ItemsSource = items; ResultTitle.Text = $"找到 {items.Length} 个条目 · 请选择下载内容"; lastInput = requestInput;
+            if (!sameInput) names.Clear();
+            resolvedItems = items;
+            Results.ItemsSource = items.Select(i => new ResultRow(i, FileNaming.Render(i, App.Services.Settings.FileNameTemplate, names.GetValueOrDefault(i.Id)))).ToArray(); ResultTitle.Text = $"找到 {items.Length} 个条目 · 请选择下载内容"; lastInput = requestInput;
             var targets = catalogs.Where(c => c.TargetItemId != null).Select(c => c.TargetItemId).ToHashSet();
-            foreach (var item in items.Where(i => previousIds?.Contains(i.Id) ?? targets.Contains(i.Id))) Results.SelectedItems.Add(item);
-            if (!fromClipboard && Results.SelectedItems.Count == 0 && previousIds == null) Results.SelectedItem = items[0];
-            var reference = Results.SelectedItems.Cast<MediaItem>().FirstOrDefault() ?? items[0];
+            foreach (var item in items.Where(i => previousIds?.Contains(i.Id) ?? targets.Contains(i.Id))) Results.SelectedItems.Add(Results.Items.Cast<ResultRow>().First(r => r.Id == item.Id));
+            if (!fromClipboard && Results.SelectedItems.Count == 0 && previousIds == null) Results.SelectedIndex = 0;
+            var reference = Results.SelectedItems.Cast<ResultRow>().Select(r => r.Item).FirstOrDefault() ?? items[0];
             var variants = await App.Services.Bili.GetVariantsAsync(reference, ct); ct.ThrowIfCancellationRequested();
             if (variants.Count == 0) throw new BiliException("当前没有可用的兼容清晰度。");
             QualityBox.ItemsSource = variants;
@@ -88,13 +118,13 @@ public sealed partial class HomePage : Page
     private async Task DownloadSelectedAsync(bool navigate)
     {
         if (QualityBox.SelectedItem is not MediaVariant quality || Results.SelectedItems.Count == 0) { Show("请选择至少一个条目。", InfoBarSeverity.Warning); return; }
-        var selected = Results.SelectedItems.Cast<MediaItem>().ToArray(); DownloadButton.IsEnabled = false;
+        var selected = Results.SelectedItems.Cast<ResultRow>().Select(r => r.Item).ToArray(); DownloadButton.IsEnabled = false;
         try
         {
             try { await MediaDownloader.CheckFfmpegAsync(App.Services.ResolveFfmpeg(), default); }
             catch (Exception) { ComponentButton.Visibility = Visibility.Visible; Show("FFmpeg 不可用，请在设置中安装组件或配置工具后，再点击下载。原链接和选择已保留。", InfoBarSeverity.Warning); return; }
             if (App.Main.IsExiting) return;
-            await App.Services.Queue.AddAsync(selected, quality.Quality, App.Services.Settings.DownloadDirectory);
+            await App.Services.Queue.AddAsync(selected, quality.Quality, App.Services.Settings.DownloadDirectory, selected.ToDictionary(i => i.Id, i => FileNaming.Render(i, App.Services.Settings.FileNameTemplate, names.GetValueOrDefault(i.Id))));
             Show("已加入下载队列。重复的活动或已完成任务会自动跳过。", InfoBarSeverity.Success);
             if (navigate) App.Main.OpenQueue();
         }

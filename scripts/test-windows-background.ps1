@@ -23,7 +23,7 @@ public interface NotificationCallback {
 }
 '@
 $projectRoot = Split-Path -Parent $PSScriptRoot
-if (-not $PackageDirectory) { $PackageDirectory = Join-Path $projectRoot 'artifacts/windows-0.1.3' }
+if (-not $PackageDirectory) { $PackageDirectory = Join-Path $projectRoot 'artifacts/windows-0.1.4' }
 $testRoot = Join-Path $projectRoot ('.build/background-validation/' + [Guid]::NewGuid().ToString('N'))
 $appDirectory = Join-Path $testRoot 'app'
 New-Item -ItemType Directory -Force $testRoot | Out-Null
@@ -61,7 +61,7 @@ function Invoke-Control([string]$Name) {
 function Start-QA {
     $script:qa = Start-Process -FilePath $exe -WindowStyle Hidden -WorkingDirectory $env:TEMP -PassThru
     Wait-Until { $script:qa.Refresh(); $script:qa.MainWindowHandle -ne 0 } 'QA window' | Out-Null
-    Wait-Until { Find '保存喜欢的视频' } 'Home UI' | Out-Null
+    Wait-Until { Find 'HomePageTitle' } 'Home UI' | Out-Null
 }
 function Close-Window { [BackgroundNative]::PostMessage($script:qa.MainWindowHandle, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null }
 function Minimize-ToTray { Close-Window; Invoke-Control '最小化到托盘'; Wait-Until { -not [BackgroundNative]::IsWindowVisible($script:qa.MainWindowHandle) } 'hidden tray window' | Out-Null }
@@ -121,6 +121,8 @@ function Set-Options([bool]$Auto, [bool]$Expand) {
         ForEach-Object { $_.Current.Name } | Where-Object { $_ -match '系统通知可用|Windows 已关闭|系统通知注册失败|系统通知发送失败|无法读取系统通知' }
     Write-Output ('Notification runtime: ' + ($notificationNames -join ' / '))
     if ($notificationNames -match '注册失败|发送失败') { throw 'Native notification registration or delivery failed.' }
+    $templateBox = Wait-Until { Find 'NamingTemplate' } 'naming template setting'
+    $templateBox.GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).SetValue('{title}-模板-{index}')
     Invoke-Control '保存设置'; Start-Sleep -Milliseconds 200
 }
 try {
@@ -134,6 +136,7 @@ try {
     $id = Copy-Link 'https://www.bilibili.com/video/BV1xx411c7mD?p=2'
     Native-Activation $id
     $completed = Wait-Until { Tasks | Where-Object { $_.Item.Cid -eq 102 -and $_.State -eq 4 } } 'automatic P2 download and FFmpeg merge'
+    if ($completed.OutputFileName -notmatch 'P2' -or $completed.OutputFileName -match '\[video:') { throw 'Automatic P2 filename did not use the full catalog.' }
     if (-not (Test-Path -LiteralPath $completed.FilePath)) { throw 'Merged output is missing.' }
     Forward 'notification' $id; Start-Sleep -Milliseconds 400
     if ((Tasks).Count -ne 1) { throw 'Repeated activation duplicated the download.' }
@@ -149,8 +152,16 @@ try {
     Forward 'notification' $id; Wait-Until { Find '找到 2 个条目 · 请选择下载内容' } 'expanded episodes' | Out-Null
     Start-Sleep -Milliseconds 400
     if ((Tasks).Count -ne 1) { throw 'Expanded selection downloaded without confirmation.' }
+    Invoke-Control 'Bangumi:202'
+    $rename = Wait-Until { Find 'RenameFileName' } 'filename editor'
+    $rename.GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).SetValue('自定义剧集😀')
+    Invoke-Control '保存'
+    Wait-Until { Find '自定义剧集😀.mp4' } 'filename preview' | Out-Null
     Invoke-Control '下载选中内容'
     Wait-Until { Tasks | Where-Object { $_.Item.EpisodeId -eq 202 -and $_.State -eq 4 } } 'linked episode 202' | Out-Null
+    $named = Tasks | Where-Object { $_.Item.EpisodeId -eq 202 }
+    if ($named.OutputFileName -ne '自定义剧集😀.mp4' -or $named.FinalFileName -ne '自定义剧集😀.mp4') { throw 'Custom filename was not persisted/published.' }
+    Write-Output 'PASS per-item filename editor, preview and actual MP4 output'
     Write-Output 'PASS expanded episodes require confirmation and preserve the linked episode selection'
     Set-Options $true $false
     Set-Content -LiteralPath (Join-Path $testRoot 'mode.txt') -Value restricted
@@ -167,6 +178,9 @@ try {
     Start-Process -FilePath ('bilidownload-qa-' + $schemeHash + '://clipboard/' + ([Guid]$id).ToString('N')) -WindowStyle Hidden | Out-Null
     $script:qa = Wait-Until { Get-Process -Name BiliDownload.QA -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe -and $_.MainWindowHandle -ne 0 } | Select-Object -First 1 } 'notification protocol cold-start window'
     Wait-Until { Tasks | Where-Object { $_.Item.Kind -eq 2 -and $_.Item.EpisodeId -eq 201 -and $_.State -eq 4 } } 'persisted activation after restart' | Out-Null
+    $cold = Tasks | Where-Object { $_.Item.Kind -eq 2 -and $_.Item.EpisodeId -eq 201 }
+    if ($cold.OutputFileName -notmatch '-模板-1.mp4$' -or $cold.FinalFileName -ne $cold.OutputFileName) { throw 'Template was not applied to cold-start automatic download.' }
+    Write-Output 'PASS settings template persists and drives automatic download after restart'
     Write-Output 'PASS notification protocol cold start and persisted snapshot after process exit'
     $other = Start-Process -FilePath $exe -WindowStyle Hidden -PassThru
     if (-not $other.WaitForExit(8000)) { throw 'Secondary process did not exit.' }

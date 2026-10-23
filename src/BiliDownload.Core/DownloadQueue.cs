@@ -32,7 +32,7 @@ public sealed class DownloadQueue : IAsyncDisposable
         workers = Enumerable.Range(0, 2).Select(_ => Task.Run(WorkerAsync)).ToArray();
     }
     public IReadOnlyList<DownloadTaskData> Snapshot() { lock (sync) return tasks.Values.OrderByDescending(t => t.CreatedAt).ToArray(); }
-    public async Task AddAsync(IEnumerable<MediaItem> items, int quality, string directory)
+    public async Task AddAsync(IEnumerable<MediaItem> items, int quality, string directory, IReadOnlyDictionary<string, string>? fileNames = null)
     {
         foreach (var item in items)
         {
@@ -40,7 +40,7 @@ public sealed class DownloadQueue : IAsyncDisposable
             lock (sync)
             {
                 if (tasks.Values.Any(t => t.Item.Id == item.Id && t.Quality == quality && t.State is not (DownloadState.Canceled or DownloadState.Failed))) continue;
-                data = new(Guid.NewGuid(), item, quality, directory, CreatedAt: DateTimeOffset.UtcNow);
+                data = new(Guid.NewGuid(), item, quality, directory, CreatedAt: DateTimeOffset.UtcNow, OutputFileName: fileNames != null && fileNames.TryGetValue(item.Id, out var name) ? FileNaming.Normalize(name) : null);
                 tasks.Add(data.Id, data); revisions[data.Id] = 0; executionGates[data.Id] = new(1);
             }
             await store.SaveAsync(data); channel.Writer.TryWrite((data.Id, 0));
@@ -151,10 +151,8 @@ public sealed class DownloadQueue : IAsyncDisposable
                         var temporary = Path.Combine(work, "merged.mp4");
                         await MediaDownloader.MergeAsync(executable, videoFiles, audioFile, temporary, ct);
                         ct.ThrowIfCancellationRequested();
-                        var filename = LinkParser.SafeName($"{item.Item.Title} P{item.Item.Index} {item.Item.PartTitle}") +
-                            $" [{item.Item.Id.Replace(':', '-')}-{plan!.Variant.Quality}].mp4";
-                        var destination = Path.Combine(item.Directory, filename);
-                        if (File.Exists(destination)) destination = Path.Combine(item.Directory, Path.GetFileNameWithoutExtension(filename) + $"-{id.ToString("N")[..6]}.mp4");
+                        var filename = item.OutputFileName ?? (LinkParser.SafeName($"{item.Item.Title} P{item.Item.Index} {item.Item.PartTitle}") +
+                            $" [{item.Item.Id.Replace(':', '-')}-{plan!.Variant.Quality}].mp4");
                         var staging = Path.Combine(item.Directory, $".bilidownload-{id:N}.tmp");
                         try
                         {
@@ -163,8 +161,8 @@ public sealed class DownloadQueue : IAsyncDisposable
                                 await source.CopyToAsync(target, ct);
                             await UpdateAsync(id, revision, t => {
                                 ct.ThrowIfCancellationRequested();
-                                File.Move(staging, destination, false);
-                                return t with { State = DownloadState.Completed, Progress = 100, Message = "下载完成", FilePath = destination };
+                                var destination = FileNaming.MoveUnique(staging, item.Directory, filename);
+                                return t with { State = DownloadState.Completed, Progress = 100, Message = "下载完成", FilePath = destination, FinalFileName = Path.GetFileName(destination) };
                             });
                         }
                         finally { if (File.Exists(staging)) File.Delete(staging); }

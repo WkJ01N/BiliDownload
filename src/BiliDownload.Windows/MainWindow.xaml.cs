@@ -28,7 +28,6 @@ public sealed partial class MainWindow : Window
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1180, 820));
         ApplyTheme();
-        Root.SizeChanged += (_, e) => TitleSubtitle.Visibility = e.NewSize.Width >= 720 ? Visibility.Visible : Visibility.Collapsed;
         if (ContentFrame.Content == null) ContentFrame.Navigate(typeof(HomePage));
         tray = new(WinRT.Interop.WindowNative.GetWindowHandle(this), RestoreWindow, () => _ = RequestExitAsync());
         lifetime = new(WinRT.Interop.WindowNative.GetWindowHandle(this), () => systemClosing = true,

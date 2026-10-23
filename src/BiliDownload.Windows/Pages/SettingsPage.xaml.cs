@@ -11,6 +11,7 @@ public sealed partial class SettingsPage : Page
     public SettingsPage()
     {
         InitializeComponent(); var settings = App.Services.Settings;
+        NamingVariables.ItemsSource = FileNaming.Variables.Select(v => "{" + v + "}"); NamingTemplate.Text = settings.FileNameTemplate;
         DirectoryBox.Text = settings.DownloadDirectory; FfmpegBox.Text = settings.FfmpegPath;
         DetectSwitch.IsOn = settings.DetectOnActivate; MonitorSwitch.IsOn = settings.MonitorClipboard; ThemeBox.SelectedValue = settings.Theme;
         AutoDownloadSwitch.IsOn = settings.AutoDownloadOnNotificationClick; ExpandRelatedSwitch.IsOn = settings.ExpandRelatedItems;
@@ -118,13 +119,24 @@ public sealed partial class SettingsPage : Page
         try
         {
             if (!Path.IsPathFullyQualified(DirectoryBox.Text) || string.IsNullOrWhiteSpace(FfmpegBox.Text)) throw new BiliException("请填写绝对保存路径及 FFmpeg 程序路径。");
+            FileNaming.Validate(NamingTemplate.Text);
             Directory.CreateDirectory(DirectoryBox.Text);
             App.Services.SaveSettings(App.Services.Settings with { DownloadDirectory = DirectoryBox.Text.Trim(), FfmpegPath = FfmpegBox.Text.Trim(),
                 DetectOnActivate = DetectSwitch.IsOn, MonitorClipboard = MonitorSwitch.IsOn, Theme = ThemeBox.SelectedValue as string ?? "Default",
-                AutoDownloadOnNotificationClick = AutoDownloadSwitch.IsOn, ExpandRelatedItems = ExpandRelatedSwitch.IsOn });
+                AutoDownloadOnNotificationClick = AutoDownloadSwitch.IsOn, ExpandRelatedItems = ExpandRelatedSwitch.IsOn, FileNameTemplate = NamingTemplate.Text });
             App.Main.ApplyTheme(); Show("设置已保存，新任务将使用新的保存目录。", InfoBarSeverity.Success);
         }
         catch (Exception ex) { Show(ex is BiliException ? ex.Message : "设置保存失败，请检查目录是否可写。", InfoBarSeverity.Error); }
     }
+    private void Naming_Changed(object sender, TextChangedEventArgs e) {
+        if (NamingPreview == null) return;
+        try { NamingPreview.Text = "预览：" + FileNaming.Render(new("video:123", "示例视频", "第二部分", "", MediaKind.Video, 1, "BV1xx411c7mD", 123, 0, 2, "", 3), NamingTemplate.Text); }
+        catch (BiliException ex) { NamingPreview.Text = ex.Message; }
+    }
+    private void InsertVariable_Click(object sender, RoutedEventArgs e) {
+        var start = NamingTemplate.SelectionStart;
+        NamingTemplate.Text = NamingTemplate.Text.Insert(start, (string)((Button)sender).Content);
+    }
+    private void ResetNaming_Click(object sender, RoutedEventArgs e) => NamingTemplate.Text = FileNaming.DefaultTemplate;
     private void Show(string text, InfoBarSeverity severity) { Notice.Message = text; Notice.Severity = severity; Notice.IsOpen = true; }
 }
