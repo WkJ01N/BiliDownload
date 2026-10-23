@@ -23,7 +23,7 @@ public interface NotificationCallback {
 }
 '@
 $projectRoot = Split-Path -Parent $PSScriptRoot
-if (-not $PackageDirectory) { $PackageDirectory = Join-Path $projectRoot 'artifacts/windows-0.1.4' }
+if (-not $PackageDirectory) { $PackageDirectory = Join-Path $projectRoot 'artifacts/windows-0.1.5' }
 $testRoot = Join-Path $projectRoot ('.build/background-validation/' + [Guid]::NewGuid().ToString('N'))
 $appDirectory = Join-Path $testRoot 'app'
 New-Item -ItemType Directory -Force $testRoot | Out-Null
@@ -121,6 +121,10 @@ function Set-Options([bool]$Auto, [bool]$Expand) {
         ForEach-Object { $_.Current.Name } | Where-Object { $_ -match '系统通知可用|Windows 已关闭|系统通知注册失败|系统通知发送失败|无法读取系统通知' }
     Write-Output ('Notification runtime: ' + ($notificationNames -join ' / '))
     if ($notificationNames -match '注册失败|发送失败') { throw 'Native notification registration or delivery failed.' }
+    $behavior = Wait-Until { Find 'CloseBehaviorBox' } 'close preference setting'
+    $behavior.GetCurrentPattern([Windows.Automation.ExpandCollapsePattern]::Pattern).Expand()
+    $ask = Wait-Until { Find '每次询问' } 'ask option'
+    $ask.GetCurrentPattern([Windows.Automation.SelectionItemPattern]::Pattern).Select()
     $templateBox = Wait-Until { Find 'NamingTemplate' } 'naming template setting'
     $templateBox.GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).SetValue('{title}-模板-{index}')
     Invoke-Control '保存设置'; Start-Sleep -Milliseconds 200
@@ -146,6 +150,8 @@ try {
     Forward 'notification' $id; Wait-Until { Find '下载选中内容' } 'confirmation page' | Out-Null
     Start-Sleep -Milliseconds 600
     if ((Tasks).Count -ne 1) { throw 'Disabled automatic download still added a task.' }
+    Wait-Until { (Find 'SizeSummary').Current.Name -match '选中 1 项：约' } 'size estimate summary' | Out-Null
+    Write-Output 'PASS quality size preview and selected-size summary'
     Write-Output 'PASS automatic download disabled: parse and confirm without queuing'
     Set-Options $true $true
     Minimize-ToTray; $id = Copy-Link 'https://www.bilibili.com/bangumi/play/ep202'
@@ -185,7 +191,32 @@ try {
     $other = Start-Process -FilePath $exe -WindowStyle Hidden -PassThru
     if (-not $other.WaitForExit(8000)) { throw 'Secondary process did not exit.' }
     Write-Output 'PASS secondary launch forwards to the existing instance'
-    Close-Window; Invoke-Control '退出应用'; if (-not $qa.WaitForExit(8000)) { throw 'Final exit failed.' }
+    $removed = Tasks | Where-Object { $_.Item.Kind -eq 2 -and $_.Item.EpisodeId -eq 201 }
+    if (-not (Find '移除记录')) { Invoke-Control 'MoreButton' }
+    Invoke-Control '移除记录'; Invoke-Control '移除'
+    Wait-Until { -not (Tasks | Where-Object { $_.Id -eq $removed.Id }) } 'removed task' | Out-Null
+    if (-not (Test-Path -LiteralPath $removed.FilePath)) { throw 'Removing a record deleted the video.' }
+    Write-Output 'PASS completed record removal preserves video'
+    Close-Window
+    (Find 'RememberCloseChoice').GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern).Toggle()
+    Invoke-Control '取消'
+    Close-Window
+    if ((Find 'RememberCloseChoice').GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern).Current.ToggleState -ne [Windows.Automation.ToggleState]::Off) { throw 'Cancel saved close choice.' }
+    (Find 'RememberCloseChoice').GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern).Toggle()
+    Invoke-Control '最小化到托盘'
+    Wait-Until { -not [BackgroundNative]::IsWindowVisible($qa.MainWindowHandle) } 'remembered tray choice' | Out-Null
+    Forward 'open'; Wait-Until { [BackgroundNative]::IsWindowVisible($qa.MainWindowHandle) } 'restored window' | Out-Null
+    Close-Window
+    Wait-Until { -not [BackgroundNative]::IsWindowVisible($qa.MainWindowHandle) } 'automatic tray close' | Out-Null
+    Forward 'open'; Wait-Until { [BackgroundNative]::IsWindowVisible($qa.MainWindowHandle) } 'restored window' | Out-Null
+    Set-Options $true $false
+    Close-Window
+    (Find 'RememberCloseChoice').GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern).Toggle()
+    Invoke-Control '退出应用'; if (-not $qa.WaitForExit(8000)) { throw 'Final exit failed.' }
+    Start-QA; Close-Window
+    if (-not $qa.WaitForExit(8000)) { throw 'Remembered exit did not exit after restart.' }
+    Write-Output 'PASS remembered exit survives restart'
+    Write-Output 'PASS close choice cancellation, remember tray and settings reset to ask'
     Set-Content -LiteralPath (Join-Path $testRoot 'result.txt') -Value 'PASS offline Windows background integration, native notification registration, live COM callback and notification protocol cold start. Physical notification-center clicks and notification-disabled behavior need separate verification.'
     Write-Output "Results: $testRoot"
 } catch {

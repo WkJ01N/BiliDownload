@@ -28,6 +28,10 @@ object DownloadActions {
             .filter { it.extras.getString("entry") == id }.forEach { context.getSystemService(JobScheduler::class.java).cancel(it.id) }
         BiliApplication.engine.pause(id, canceled)
     }
+    suspend fun remove(context: Context, id: String) {
+        pause(context, id, true)
+        BiliApplication.store.delete(id)
+    }
     fun notification(context: Context, entry: DownloadEntry): Notification {
         val open = PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val pause = PendingIntent.getBroadcast(context, entry.id.hashCode(), Intent(context, PauseReceiver::class.java).putExtra("entry", entry.id), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)

@@ -2,7 +2,7 @@ package io.github.bilidownload
 
 data class MediaItem(val id: String, val title: String, val partTitle: String, val kind: String,
     val aid: Long, val bvid: String, val cid: Long, val episodeId: Long, val index: Int, val cover: String = "", val partCount: Int = 1)
-data class Variant(val quality: Int, val label: String)
+data class Variant(val quality: Int, val label: String, val estimatedBytes: Long? = null)
 data class StreamPart(val key: String, val url: String, val backups: List<String>)
 data class DownloadPlan(val variant: Variant, val video: List<StreamPart>, val audio: StreamPart?)
 data class DownloadEntry(val id: String, val item: MediaItem, val quality: Int,

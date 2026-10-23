@@ -52,7 +52,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             return
         else:
-            data = {"quality": 80, "durl": [{"url": f"http://127.0.0.1:{self.server.server_port}/media"}]}
+            data = {"quality": 80, "durl": [{"url": f"http://127.0.0.1:{self.server.server_port}/media", "size": (root / "video.mp4").stat().st_size}]}
         response = json.dumps({"code": 0, "data": data, "result": data}).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")

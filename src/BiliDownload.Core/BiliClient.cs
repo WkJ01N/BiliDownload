@@ -178,10 +178,10 @@ public sealed partial class BiliClient : IMediaService, IDisposable
     {
         if (data.TryGetProperty("dash", out var dash) && dash.ValueKind == JsonValueKind.Object && dash.TryGetProperty("video", out var videos))
             return videos.EnumerateArray().Where(v => v.Num("codecid") == 7 || v.Str("codecs").StartsWith("avc"))
-                .Select(v => new MediaVariant((int)v.Num("id"), QualityLabel((int)v.Num("id")), (int)v.Num("height"), "H.264"))
+                .Select(v => new MediaVariant((int)v.Num("id"), QualityLabel((int)v.Num("id")), (int)v.Num("height"), "H.264", MediaSize.Estimate(data, v)))
                 .DistinctBy(v => v.Quality).OrderBy(v => v.Quality).ToArray();
         if (data.TryGetProperty("durl", out var durl) && durl.ValueKind == JsonValueKind.Array && durl.GetArrayLength() > 0)
-            return [new((int)data.Num("quality"), QualityLabel((int)data.Num("quality")), 0, "H.264")];
+            return [new((int)data.Num("quality"), QualityLabel((int)data.Num("quality")), 0, "H.264", MediaSize.Progressive(durl))];
         throw new BiliException("没有可导出的兼容视频流，请检查登录状态和观看权限。");
     }
 

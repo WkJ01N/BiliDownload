@@ -39,11 +39,24 @@ public sealed partial class MainWindow : Window
             if (exiting || closePrompt) return;
             closePrompt = true;
             try {
+                var preference = App.Services.Settings.CloseBehavior;
+                if (preference == "Exit") { await RequestExitAsync(); return; }
+                if (preference == "Tray" && tray?.IsAvailable == true) { AppWindow.Hide(); return; }
+                var remember = new CheckBox { Content = "记住我的选择（可在设置中修改）" };
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(remember, "RememberCloseChoice");
+                var panel = new StackPanel { Spacing = 12 };
+                panel.Children.Add(new TextBlock { Text = "最小化到托盘后，下载会继续运行。退出应用将暂停未完成任务，下次可继续。", TextWrapping = TextWrapping.Wrap });
+                panel.Children.Add(remember);
                 var dialog = new ContentDialog { XamlRoot = Root.XamlRoot, Title = "关闭 BiliDownload",
-                    Content = "最小化到托盘后，下载会继续运行。退出应用将暂停未完成任务，下次可继续。",
+                    Content = panel,
                     PrimaryButtonText = "最小化到托盘", SecondaryButtonText = "退出应用", CloseButtonText = "取消",
                     DefaultButton = ContentDialogButton.Primary };
                 var result = await DialogCoordinator.ShowAsync(dialog);
+                if (remember.IsChecked == true && result != ContentDialogResult.None) {
+                    try { App.Services.SaveSettings(App.Services.Settings with { CloseBehavior = result == ContentDialogResult.Primary ? "Tray" : "Exit" }); }
+                    catch { ShowMessage("关闭偏好保存失败，下次仍会询问。"); }
+                    if (ContentFrame.Content is SettingsPage settingsPage) settingsPage.SyncClosePreference();
+                }
                 if (result == ContentDialogResult.Primary) {
                     if (tray?.IsAvailable == true) AppWindow.Hide();
                     else ShowMessage("托盘图标暂时不可用，窗口已保留。可以稍后重试或选择退出应用。");
@@ -131,6 +144,7 @@ public sealed partial class MainWindow : Window
                 "Canceled" => [],
                 _ => ["暂停", "取消"]
             };
+            expectedLabels = expectedLabels.Append("移除记录").ToArray();
             Navigation.SelectedItem = Navigation.MenuItems.OfType<NavigationViewItem>().First(i => i.Tag as string == page);
             ContentFrame.Navigate(typeof(QueuePage), page);
             ((QueuePage)ContentFrame.Content).ShowSmokeState(Enum.Parse<BiliDownload.Core.DownloadState>(state));

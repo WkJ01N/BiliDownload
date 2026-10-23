@@ -45,6 +45,13 @@ public sealed partial class QueuePage : Page
         try { await App.Services.Queue.SetStateAsync(Item(sender).Id, state); }
         catch (Exception) { Show("无法更新任务状态，请重试。", InfoBarSeverity.Error); }
     }
+    private async void Remove_Click(object sender, RoutedEventArgs e) {
+        var item = Item(sender);
+        var dialog = new ContentDialog { XamlRoot = XamlRoot, Title = "移除任务记录？", Content = "进行中的下载会停止，并清理该任务的临时缓存。已下载的视频文件会保留。", PrimaryButtonText = "移除", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Close };
+        if (await DialogCoordinator.ShowAsync(dialog) != ContentDialogResult.Primary) return;
+        try { await App.Services.Queue.RemoveAsync(item.Id); }
+        catch { Show("记录移除失败，请重试。", InfoBarSeverity.Error); }
+    }
     private async void Login_Click(object sender, RoutedEventArgs e)
     {
         var result = await LoginFlow.ShowAsync(XamlRoot);

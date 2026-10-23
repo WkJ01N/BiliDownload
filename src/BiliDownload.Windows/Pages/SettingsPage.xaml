@@ -31,10 +31,11 @@
   <TextBlock Text="后台识别链接时发送系统通知。展开其他分 P／集时始终先确认选择。关闭窗口时可选择最小化到托盘或退出；退出后停止监听。" Opacity="0.6" TextWrapping="Wrap"/>
   <TextBlock x:Name="NotificationStatus" TextWrapping="Wrap"/>
   <HyperlinkButton Content="打开 Windows 通知设置" NavigateUri="ms-settings:notifications" Padding="0,8" HorizontalAlignment="Left"/>
+  <ComboBox x:Name="CloseBehaviorBox" Header="关闭窗口时" SelectedValuePath="Tag" HorizontalAlignment="Left"><ComboBoxItem Content="每次询问" Tag="Ask"/><ComboBoxItem Content="最小化到托盘" Tag="Tray"/><ComboBoxItem Content="退出应用" Tag="Exit"/></ComboBox>
   <ComboBox x:Name="ThemeBox" Header="外观" SelectedValuePath="Tag"><ComboBoxItem Content="跟随系统" Tag="Default"/><ComboBoxItem Content="浅色" Tag="Light"/><ComboBoxItem Content="深色" Tag="Dark"/></ComboBox>
   <Button Content="保存设置" Style="{StaticResource AccentButtonStyle}" Click="Save_Click"/>
   <InfoBar x:Name="Notice" IsOpen="False"/>
-  <TextBlock Text="BiliDownload · Windows 预览版 0.1.4" Opacity="0.6"/>
+  <TextBlock Text="BiliDownload · Windows 预览版 0.1.5" Opacity="0.6"/>
   <HyperlinkButton Content="GitHub 仓库 · WkJ01N/BiliDownload" NavigateUri="https://github.com/WkJ01N/BiliDownload" Padding="0,8" HorizontalAlignment="Left"/>
  </StackPanel></ScrollViewer>
 </Page>

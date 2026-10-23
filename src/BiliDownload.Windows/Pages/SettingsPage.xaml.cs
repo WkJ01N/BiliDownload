@@ -11,7 +11,7 @@ public sealed partial class SettingsPage : Page
     public SettingsPage()
     {
         InitializeComponent(); var settings = App.Services.Settings;
-        NamingVariables.ItemsSource = FileNaming.Variables.Select(v => "{" + v + "}"); NamingTemplate.Text = settings.FileNameTemplate;
+        NamingVariables.ItemsSource = FileNaming.Variables.Select(v => "{" + v + "}"); NamingTemplate.Text = settings.FileNameTemplate; CloseBehaviorBox.SelectedValue = settings.CloseBehavior;
         DirectoryBox.Text = settings.DownloadDirectory; FfmpegBox.Text = settings.FfmpegPath;
         DetectSwitch.IsOn = settings.DetectOnActivate; MonitorSwitch.IsOn = settings.MonitorClipboard; ThemeBox.SelectedValue = settings.Theme;
         AutoDownloadSwitch.IsOn = settings.AutoDownloadOnNotificationClick; ExpandRelatedSwitch.IsOn = settings.ExpandRelatedItems;
@@ -20,6 +20,7 @@ public sealed partial class SettingsPage : Page
         Unloaded += (_, _) => componentDownload?.Cancel();
         Loaded += async (_, _) => await RefreshAccountAsync();
     }
+    public void SyncClosePreference() => CloseBehaviorBox.SelectedValue = App.Services.Settings.CloseBehavior;
     private void RefreshComponents()
     {
         var resolved = App.Services.ResolveFfmpeg();
@@ -123,7 +124,7 @@ public sealed partial class SettingsPage : Page
             Directory.CreateDirectory(DirectoryBox.Text);
             App.Services.SaveSettings(App.Services.Settings with { DownloadDirectory = DirectoryBox.Text.Trim(), FfmpegPath = FfmpegBox.Text.Trim(),
                 DetectOnActivate = DetectSwitch.IsOn, MonitorClipboard = MonitorSwitch.IsOn, Theme = ThemeBox.SelectedValue as string ?? "Default",
-                AutoDownloadOnNotificationClick = AutoDownloadSwitch.IsOn, ExpandRelatedItems = ExpandRelatedSwitch.IsOn, FileNameTemplate = NamingTemplate.Text });
+                AutoDownloadOnNotificationClick = AutoDownloadSwitch.IsOn, ExpandRelatedItems = ExpandRelatedSwitch.IsOn, FileNameTemplate = NamingTemplate.Text, CloseBehavior = CloseBehaviorBox.SelectedValue as string ?? "Ask" });
             App.Main.ApplyTheme(); Show("设置已保存，新任务将使用新的保存目录。", InfoBarSeverity.Success);
         }
         catch (Exception ex) { Show(ex is BiliException ? ex.Message : "设置保存失败，请检查目录是否可写。", InfoBarSeverity.Error); }

@@ -71,6 +71,10 @@ class MainActivity : ComponentActivity() {
             var namingDraft by rememberSaveable { mutableStateOf(namingTemplate) }
             var customNamesJson by rememberSaveable { mutableStateOf("{}") }
             fun customNames(): Map<String, String> = Gson().fromJson(customNamesJson, object : TypeToken<Map<String, String>>() {}.type)
+            val sizeCache = remember { mutableMapOf<String, List<Variant>>() }
+            var sizes by remember { mutableStateOf(emptyMap<String, Variant?>()) }
+            var sizeLoading by remember { mutableStateOf(false) }
+            var removeId by rememberSaveable { mutableStateOf<String?>(null) }
             var renameId by rememberSaveable { mutableStateOf<String?>(null) }
             var renameText by rememberSaveable { mutableStateOf("") }
             var qualityOpen by remember { mutableStateOf(false) }
@@ -94,13 +98,13 @@ class MainActivity : ComponentActivity() {
                 val oldSelection = if(parsedInput == requestInput) selected else null
                 val oldQuality = if(parsedInput == requestInput) quality else null
                 scope.launch {
-                    loading = true; message = ""; failureKind = null; retryParse = false
-                    if(parsedInput != requestInput) { customNamesJson = "{}"; media = emptyList(); variants = emptyList(); selected = emptySet() }
+                    sizeCache.clear(); loading = true; message = ""; failureKind = null; retryParse = false
+                    if(parsedInput != requestInput) { customNamesJson = "{}"; sizeCache.clear(); sizes = emptyMap(); media = emptyList(); variants = emptyList(); selected = emptySet() }
                     try {
                         val resolved = BiliApplication.api.resolve(requestInput)
                         media = resolved; parsedInput = requestInput
                         selected = oldSelection?.intersect(resolved.map { it.id }.toSet()) ?: setOf(resolved.first().id)
-                        variants = BiliApplication.api.variants(resolved.first())
+                        variants = BiliApplication.api.variants(resolved.first()); sizeCache[resolved.first().id] = variants
                         if(variants.isEmpty()) throw BiliException("没有可用的兼容画质。")
                         quality = variants.firstOrNull { it.quality == oldQuality }?.quality ?: variants.filter { it.quality <= 80 }.maxByOrNull { it.quality }?.quality ?: variants.first().quality
                     } catch(e: CancellationException) { throw e }
@@ -112,6 +116,23 @@ class MainActivity : ComponentActivity() {
                 if(uri != null) { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION); directory = uri.toString(); prefs.edit().putString("directory", directory).apply() }
             }
             LaunchedEffect(Unit) { if(Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS) }
+            LaunchedEffect(media, selected, quality, loading) {
+                if(loading) return@LaunchedEffect
+                sizeLoading = true
+                val result = mutableMapOf<String, Variant?>()
+                try {
+                    for(item in media.filter { it.id in selected }) {
+                        val available = try { sizeCache[item.id] ?: BiliApplication.api.variants(item).also { sizeCache[item.id] = it } }
+                        catch(e: CancellationException) { throw e } catch(_: Exception) { emptyList() }
+                        result[item.id] = available.filter { it.quality <= quality }.maxByOrNull { it.quality }
+                    }
+                    sizes = result
+                } finally { sizeLoading = false }
+            }
+            removeId?.let { id -> AlertDialog(onDismissRequest = { removeId = null }, title = { Text("移除任务记录？") }, text = { Text("进行中的下载会停止，并清理临时缓存。已下载的视频文件会保留。") }, confirmButton = { TextButton(onClick = {
+                removeId = null
+                scope.launch { try { withContext(Dispatchers.IO) { DownloadActions.remove(this@MainActivity, id) } } catch(_: Exception) { message = "移除失败，请重试。" } }
+            }) { Text("移除") } }, dismissButton = { TextButton(onClick = { removeId = null }) { Text("取消") } }) }
             renameId?.let { id ->
                 fun finish(custom: String?) {
                     val updated = customNames().toMutableMap()
@@ -150,7 +171,8 @@ class MainActivity : ComponentActivity() {
                             if(media.isNotEmpty()) {
                                 item { Text("找到 ${media.size} 个条目，勾选后下载") }
                                 item { Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) { TextButton(onClick = { selected = media.map { it.id }.toSet() }) { Text("全选") }; TextButton(onClick = { selected = emptySet() }) { Text("取消全选") } } }
-                                item { Box { OutlinedButton(onClick = { qualityOpen = true }) { Text("画质上限：${BiliApi.label(quality)}") }; DropdownMenu(expanded = qualityOpen, onDismissRequest = { qualityOpen = false }) { variants.forEach { v -> DropdownMenuItem(text = { Text(v.label) }, onClick = { quality = v.quality; qualityOpen = false }) } } } }
+                                item { Box { OutlinedButton(onClick = { qualityOpen = true }) { Text("画质上限：${BiliApi.label(quality)}") }; DropdownMenu(expanded = qualityOpen, onDismissRequest = { qualityOpen = false }) { variants.forEach { v -> DropdownMenuItem(text = { Text(v.label + " · " + MediaSize.format(v.estimatedBytes)) }, onClick = { quality = v.quality; qualityOpen = false }) } } } }
+                                item { Text(if(sizeLoading) "正在估算大小…" else "选中 ${selected.size} 项：" + MediaSize.format(sizes.values.mapNotNull { it?.estimatedBytes }.takeIf { it.isNotEmpty() }?.sum()) + (if(sizes.values.any { it?.estimatedBytes == null }) "，部分大小未知" else "") + "。大小为音视频估算值，最终文件可能略有差异。") }
                                 item { Button(enabled = selected.isNotEmpty() && variants.isNotEmpty() && !loading && !retryParse, onClick = {
                                     try {
                                         media.filter { it.id in selected }.forEach { item ->
@@ -158,7 +180,7 @@ class MainActivity : ComponentActivity() {
                                         }; message = "已加入下载队列"; tab = 1
                                     } catch(e: Exception) { message = if(e is BiliException) e.message.orEmpty() else "系统暂时无法开始下载，请保持应用可见后重试。" }
                                 }) { Text("下载选中内容") } }
-                                items(media, key = { it.id }) { item -> Card { Column { Cover(item.cover); Row(Modifier.padding(12.dp)) { Checkbox(checked = item.id in selected, onCheckedChange = { selected = if(it) selected + item.id else selected - item.id }); Column { Text(item.title, style = MaterialTheme.typography.titleMedium); Text(item.partTitle); Text(FileNaming.render(item, namingTemplate, customNames()[item.id])); TextButton(onClick = { renameId = item.id; renameText = FileNaming.render(item, namingTemplate, customNames()[item.id]).removeSuffix(".mp4") }) { Text("修改文件名") } } } } } }
+                                items(media, key = { it.id }) { item -> Card { Column { Cover(item.cover); Row(Modifier.padding(12.dp)) { Checkbox(checked = item.id in selected, onCheckedChange = { selected = if(it) selected + item.id else selected - item.id }); Column { Text(item.title, style = MaterialTheme.typography.titleMedium); Text(item.partTitle); Text(if(item.id !in selected) "选择后估算大小" else if(sizeLoading) "正在估算…" else (sizes[item.id]?.let { it.label + " · " + MediaSize.format(it.estimatedBytes) } ?: "大小未知，可重试解析")); Text(FileNaming.render(item, namingTemplate, customNames()[item.id])); TextButton(onClick = { renameId = item.id; renameText = FileNaming.render(item, namingTemplate, customNames()[item.id]).removeSuffix(".mp4") }) { Text("修改文件名") } } } } } }
                             }
                         }
                         1, 2 -> {
@@ -174,6 +196,7 @@ class MainActivity : ComponentActivity() {
                                     if(entry.state in listOf("Queued", "Downloading", "Merging")) TextButton(onClick = { scope.launch(Dispatchers.IO) { DownloadActions.pause(this@MainActivity, entry.id) } }) { Text("暂停") }
                                     if(entry.state != "Canceled") TextButton(onClick = { scope.launch(Dispatchers.IO) { DownloadActions.pause(this@MainActivity, entry.id, true) } }) { Text("取消") }
                                 }
+                                TextButton(onClick = { removeId = entry.id }) { Text("移除记录") }
                             } } }
                         }
                         3 -> {
@@ -194,7 +217,7 @@ class MainActivity : ComponentActivity() {
                             item { Text("保存位置：${directory ?: "Movies/BiliDownload"}") }
                             item { Row { OutlinedButton(onClick = { picker.launch(null) }) { Text("选择目录") }; TextButton(onClick = { directory = null; prefs.edit().remove("directory").apply() }) { Text("恢复默认") } } }
                             item { Row { listOf("Default" to "系统", "Light" to "浅色", "Dark" to "深色").forEach { (value,label) -> TextButton(onClick = { theme = value; prefs.edit().putString("theme", value).apply() }) { Text(label) } } } }
-                            item { Text("BiliDownload · Android 预览版 0.1.4") }
+                            item { Text("BiliDownload · Android 预览版 0.1.5") }
                             item { TextButton(onClick = { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/WkJ01N/BiliDownload"))) }.onFailure { message = "无法打开浏览器，请访问 github.com/WkJ01N/BiliDownload。" } }) { Text("GitHub 仓库 · WkJ01N/BiliDownload") } }
                         }
                     }

@@ -14,7 +14,12 @@ public sealed partial class HomePage : Page
     private bool clipboardMode;
     private readonly Dictionary<string, string> names = new();
     private MediaItem[] resolvedItems = [];
-    public sealed record ResultRow(MediaItem Item, string FileName) {
+    private CancellationTokenSource? estimating;
+    private readonly Dictionary<string, IReadOnlyList<MediaVariant>> estimates = new();
+    public sealed record ResultRow(MediaItem Item, string FileName) : System.ComponentModel.INotifyPropertyChanged {
+        private string sizeText = "选择后估算大小";
+        public string SizeText { get => sizeText; set { sizeText = value; PropertyChanged?.Invoke(this, new(nameof(SizeText))); } }
+        public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
         public string Id => Item.Id;
         public string Title => Item.Title;
         public string PartTitle => Item.PartTitle;
@@ -43,7 +48,7 @@ public sealed partial class HomePage : Page
     public HomePage() { InitializeComponent(); NavigationCacheMode = NavigationCacheMode.Enabled; }
     protected override void OnNavigatedTo(NavigationEventArgs e) { if (e.Parameter is string text && text != "home") LinkInput.Text = text; if (resolvedItems.Length > 0) RefreshNames(); }
     protected override void OnNavigatedFrom(NavigationEventArgs e) => CancelPending();
-    public void CancelPending() => parsing?.Cancel();
+    public void CancelPending() { parsing?.Cancel(); estimating?.Cancel(); }
     private async void Parse_Click(object sender, RoutedEventArgs e) => await ParseAsync(ReferenceEquals(sender, RetryButton) && clipboardMode);
 
     public async Task OpenClipboardAsync(ClipboardRequest request, bool fromNotification)
@@ -62,6 +67,7 @@ public sealed partial class HomePage : Page
     private async Task<IReadOnlyList<MediaCatalog>?> ParseAsync(bool fromClipboard, bool preserveSelection = true)
     {
         parsing?.Cancel(); using var current = new CancellationTokenSource(); parsing = current; var ct = current.Token;
+        estimates.Clear();
         clipboardMode = fromClipboard;
         var requestInput = LinkInput.Text;
         var sameInput = preserveSelection && lastInput == requestInput;
@@ -69,7 +75,7 @@ public sealed partial class HomePage : Page
         var previousQuality = sameInput ? (QualityBox.SelectedItem as MediaVariant)?.Quality : null;
         Busy.IsActive = true; ParseButton.IsEnabled = Results.IsEnabled = DownloadButton.IsEnabled = false; Notice.IsOpen = false;
         LoginButton.Visibility = RetryButton.Visibility = ComponentButton.Visibility = Visibility.Collapsed; RetryButton.IsEnabled = false;
-        if (!sameInput) { names.Clear(); resolvedItems = []; Results.ItemsSource = null; QualityBox.ItemsSource = null; }
+        if (!sameInput) { estimates.Clear(); names.Clear(); resolvedItems = []; Results.ItemsSource = null; QualityBox.ItemsSource = null; }
         try
         {
             var catalogs = await App.Services.Bili.ResolveAsync(requestInput, ct); ct.ThrowIfCancellationRequested();
@@ -84,6 +90,7 @@ public sealed partial class HomePage : Page
             var reference = Results.SelectedItems.Cast<ResultRow>().Select(r => r.Item).FirstOrDefault() ?? items[0];
             var variants = await App.Services.Bili.GetVariantsAsync(reference, ct); ct.ThrowIfCancellationRequested();
             if (variants.Count == 0) throw new BiliException("当前没有可用的兼容清晰度。");
+            estimates[reference.Id] = variants;
             QualityBox.ItemsSource = variants;
             QualityBox.SelectedItem = variants.FirstOrDefault(v => v.Quality == previousQuality) ?? variants.Where(v => v.Quality <= 80).MaxBy(v => v.Quality) ?? variants.MinBy(v => v.Quality);
             DownloadButton.IsEnabled = true;
@@ -98,7 +105,7 @@ public sealed partial class HomePage : Page
         }
         finally
         {
-            if (ReferenceEquals(parsing, current)) { parsing = null; Busy.IsActive = false; ParseButton.IsEnabled = Results.IsEnabled = RetryButton.IsEnabled = true; }
+            if (ReferenceEquals(parsing, current)) { parsing = null; Busy.IsActive = false; ParseButton.IsEnabled = Results.IsEnabled = RetryButton.IsEnabled = true; Estimate_Changed(this, null!); }
         }
     }
     private async void Login_Click(object sender, RoutedEventArgs e)
@@ -134,5 +141,31 @@ public sealed partial class HomePage : Page
     private void Component_Click(object sender, RoutedEventArgs e) => App.Main.OpenSettings();
     private void SelectAll_Click(object sender, RoutedEventArgs e) => Results.SelectAll();
     private void SelectNone_Click(object sender, RoutedEventArgs e) => Results.SelectedItems.Clear();
+    private async void Estimate_Changed(object sender, SelectionChangedEventArgs e) {
+        estimating?.Cancel();
+        if (parsing != null) return;
+        if (QualityBox?.SelectedItem is not MediaVariant quality || Results == null || SizeSummary == null) return;
+        using var request = new CancellationTokenSource(); estimating = request; var ct = request.Token;
+        var selected = Results.SelectedItems.Cast<ResultRow>().ToArray();
+        foreach (var row in Results.Items.Cast<ResultRow>().Except(selected)) row.SizeText = "选择后估算大小";
+        SizeSummary.Text = selected.Length == 0 ? "选择条目后显示大小；最终文件可能略有差异。" : "正在估算选中内容的大小…";
+        long total = 0; var unknown = 0;
+        try {
+            foreach (var row in selected) {
+                row.SizeText = "正在估算…";
+                if (!estimates.TryGetValue(row.Id, out var variants)) {
+                    try { variants = await App.Services.Bili.GetVariantsAsync(row.Item, ct); ct.ThrowIfCancellationRequested(); estimates[row.Id] = variants; }
+                    catch (OperationCanceledException) { throw; }
+                    catch { row.SizeText = "大小未知，可重试解析"; unknown++; continue; }
+                }
+                ct.ThrowIfCancellationRequested();
+                var actual = variants.Where(v => v.Quality <= quality.Quality).MaxBy(v => v.Quality);
+                row.SizeText = actual == null ? "此画质上限无可用视频" : actual.Label + " · " + MediaSize.Format(actual.EstimatedBytes);
+                if (actual?.EstimatedBytes is > 0) total += actual.EstimatedBytes.Value; else unknown++;
+            }
+            SizeSummary.Text = selected.Length == 0 ? "选择条目后显示大小。" : $"选中 {selected.Length} 项：{MediaSize.Format(total)}" + (unknown > 0 ? $"，另有 {unknown} 项大小未知" : "") + "。大小为音视频估算值，最终文件可能略有差异。";
+        } catch (OperationCanceledException) { }
+        finally { if (ReferenceEquals(estimating, request)) estimating = null; }
+    }
     private void Show(string text, InfoBarSeverity severity) { Notice.Message = text; Notice.Severity = severity; Notice.IsOpen = true; }
 }

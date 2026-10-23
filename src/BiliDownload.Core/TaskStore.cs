@@ -37,4 +37,9 @@ public sealed class TaskStore
         }
         finally { gate.Release(); }
     }
+    public async Task DeleteAsync(Guid id) {
+        await gate.WaitAsync();
+        try { using var db = Open(); using var cmd = db.CreateCommand(); cmd.CommandText = "DELETE FROM tasks WHERE id=$id"; cmd.Parameters.AddWithValue("$id", id.ToString()); cmd.ExecuteNonQuery(); }
+        finally { gate.Release(); }
+    }
 }

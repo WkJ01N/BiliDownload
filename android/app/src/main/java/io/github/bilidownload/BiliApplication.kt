@@ -47,6 +47,10 @@ class TaskStore(context: Context) : SQLiteOpenHelper(context, "tasks.db", null, 
         val previous = mutable.value
         mutable.value = if(previous.any { it.id == entry.id }) previous.map { if(it.id == entry.id) entry else it } else listOf(entry) + previous
     }
+    @Synchronized fun delete(id: String) {
+        writableDatabase.delete("tasks", "id = ?", arrayOf(id))
+        mutable.value = mutable.value.filter { it.id != id }
+    }
     @Synchronized fun get(id: String) = mutable.value.firstOrNull { it.id == id }
     @Synchronized fun update(id: String, change: (DownloadEntry) -> DownloadEntry) { get(id)?.let { put(change(it)) } }
 }

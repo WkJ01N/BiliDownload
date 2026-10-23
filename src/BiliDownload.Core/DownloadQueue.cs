@@ -42,25 +42,28 @@ public sealed class DownloadQueue : IAsyncDisposable
                 if (tasks.Values.Any(t => t.Item.Id == item.Id && t.Quality == quality && t.State is not (DownloadState.Canceled or DownloadState.Failed))) continue;
                 data = new(Guid.NewGuid(), item, quality, directory, CreatedAt: DateTimeOffset.UtcNow, OutputFileName: fileNames != null && fileNames.TryGetValue(item.Id, out var name) ? FileNaming.Normalize(name) : null);
                 tasks.Add(data.Id, data); revisions[data.Id] = 0; executionGates[data.Id] = new(1);
+                store.SaveAsync(data).GetAwaiter().GetResult();
             }
-            await store.SaveAsync(data); channel.Writer.TryWrite((data.Id, 0));
+            channel.Writer.TryWrite((data.Id, 0));
         }
         Changed?.Invoke();
+        await Task.CompletedTask;
     }
     public async Task SetStateAsync(Guid id, DownloadState state)
     {
         DownloadTaskData data; int revision;
         lock (sync)
         {
-            var old = tasks[id];
+            if (!tasks.TryGetValue(id, out var old)) return;
             if (old.State == DownloadState.Completed) return;
             if (state == DownloadState.Queued && old.State is not (DownloadState.Paused or DownloadState.Failed)) return;
             revision = ++revisions[id];
             if (running.Remove(id, out var token)) token.Cancel();
             data = old with { State = state, FailureKind = null, Message = state switch { DownloadState.Paused => "已暂停", DownloadState.Canceled => "已取消", _ => "等待下载" } };
             tasks[id] = data;
+            store.SaveAsync(data).GetAwaiter().GetResult();
         }
-        await store.SaveAsync(data); Changed?.Invoke();
+        Changed?.Invoke();
         if (state == DownloadState.Queued) channel.Writer.TryWrite((id, revision));
         if (state == DownloadState.Canceled)
         {
@@ -69,7 +72,7 @@ public sealed class DownloadQueue : IAsyncDisposable
             await execution.WaitAsync();
             try
             {
-                bool canceled; lock (sync) canceled = tasks[id].State == DownloadState.Canceled;
+                bool canceled; lock (sync) canceled = tasks.TryGetValue(id, out var current) && current.State == DownloadState.Canceled;
                 var directory = Path.Combine(cache, id.ToString("N"));
                 if (canceled && Directory.Exists(directory))
                     try { Directory.Delete(directory, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
@@ -82,7 +85,7 @@ public sealed class DownloadQueue : IAsyncDisposable
         DownloadTaskData data;
         lock (sync)
         {
-            if (revisions[id] != revision) return;
+            if (revisions[id] != revision || !tasks.ContainsKey(id)) return;
             data = update(tasks[id]); tasks[id] = data;
             // Serialize persistent state transitions before a newer pause/resume can be persisted.
             if (persist) store.SaveAsync(data).GetAwaiter().GetResult();
@@ -103,7 +106,7 @@ public sealed class DownloadQueue : IAsyncDisposable
                 DownloadTaskData item; CancellationTokenSource token;
                 lock (sync)
                 {
-                    if (revisions[id] != revision || tasks[id].State != DownloadState.Queued) continue;
+                    if (revisions[id] != revision || !tasks.ContainsKey(id) || tasks[id].State != DownloadState.Queued) continue;
                     item = tasks[id]; token = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token); running[id] = token;
                 }
                 using (token)
@@ -184,6 +187,22 @@ public sealed class DownloadQueue : IAsyncDisposable
             }
         }
         catch (OperationCanceledException) when (shutdown.IsCancellationRequested) { }
+    }
+    public async Task RemoveAsync(Guid id) {
+        SemaphoreSlim execution;
+        lock (sync) {
+            if (!tasks.Remove(id)) return;
+            ++revisions[id];
+            if (running.Remove(id, out var token)) token.Cancel();
+            execution = executionGates[id];
+        }
+        Changed?.Invoke();
+        await execution.WaitAsync();
+        try {
+            await store.DeleteAsync(id);
+            var directory = Path.Combine(cache, id.ToString("N"));
+            if (Directory.Exists(directory)) try { Directory.Delete(directory, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        } finally { execution.Release(); }
     }
     public async ValueTask DisposeAsync()
     {

@@ -116,8 +116,8 @@ class BiliApi(private val session: Session) {
     private fun variants(data: JSONObject): List<Variant> {
         val dash = data.optJSONObject("dash")
         if (dash != null) return dash.optJSONArray("video").objects().filter { it.optInt("codecid") == 7 || it.optString("codecs").startsWith("avc") }
-            .map { Variant(it.getInt("id"), label(it.getInt("id"))) }.distinctBy { it.quality }.sortedBy { it.quality }
-        if (data.optJSONArray("durl")?.length() ?: 0 > 0) return listOf(Variant(data.optInt("quality"), label(data.optInt("quality"))))
+            .map { Variant(it.getInt("id"), label(it.getInt("id")), MediaSize.estimate(data, it)) }.distinctBy { it.quality }.sortedBy { it.quality }
+        if (data.optJSONArray("durl")?.length() ?: 0 > 0) return listOf(Variant(data.optInt("quality"), label(data.optInt("quality")), data.getJSONArray("durl").objects().map { it.optLong("size") }.let { sizes -> if(sizes.all { it > 0 }) sizes.sum() else null }))
         throw BiliException("没有可下载的兼容视频源，请检查账号权限。")
     }
     suspend fun variants(item: MediaItem) = variants(info(item, 127))

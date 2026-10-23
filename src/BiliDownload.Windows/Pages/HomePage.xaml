@@ -10,13 +10,14 @@
     </Border>
     <InfoBar x:Name="Notice" IsOpen="False" IsClosable="True"><InfoBar.Content><StackPanel Spacing="8"><Button x:Name="LoginButton" Content="登录 B 站" Visibility="Collapsed" Click="Login_Click"/><Button x:Name="RetryButton" Content="重新解析" Visibility="Collapsed" Click="Parse_Click"/><Button x:Name="ComponentButton" Content="安装 / 配置 FFmpeg" Visibility="Collapsed" Click="Component_Click"/></StackPanel></InfoBar.Content></InfoBar>
     <TextBlock x:Name="ResultTitle" Text="等待解析" Style="{StaticResource SubtitleTextBlockStyle}"/>
-    <StackPanel Spacing="12"><StackPanel Orientation="Horizontal" Spacing="12"><Button Content="全选" Click="SelectAll_Click"/><Button Content="取消全选" Click="SelectNone_Click"/></StackPanel><ComboBox x:Name="QualityBox" Header="画质上限" MinWidth="170" MaxWidth="280" HorizontalAlignment="Stretch" DisplayMemberPath="Label" SelectedValuePath="Quality"/><Button x:Name="DownloadButton" Content="下载选中内容" HorizontalAlignment="Left" Style="{StaticResource AccentButtonStyle}" IsEnabled="False" Click="Download_Click"/></StackPanel>
+    <StackPanel Spacing="12"><StackPanel Orientation="Horizontal" Spacing="12"><Button Content="全选" Click="SelectAll_Click"/><Button Content="取消全选" Click="SelectNone_Click"/></StackPanel><ComboBox x:Name="QualityBox" Header="画质上限" MinWidth="170" MaxWidth="280" HorizontalAlignment="Left" DisplayMemberPath="DisplayLabel" SelectionChanged="Estimate_Changed" SelectedValuePath="Quality"/><Button x:Name="DownloadButton" Content="下载选中内容" HorizontalAlignment="Left" Style="{StaticResource AccentButtonStyle}" IsEnabled="False" Click="Download_Click"/></StackPanel>
     <TextBlock Text="画质列表以第一个条目为参考，下载时为每项选择不超过上限的可用 H.264 画质。" Opacity="0.6" TextWrapping="Wrap"/>
-    <ListView x:Name="Results" SelectionMode="Multiple" MaxHeight="1100">
+    <TextBlock x:Name="SizeSummary" Text="大小为音视频估算值，最终文件可能略有差异。" Opacity="0.65" TextWrapping="Wrap"/>
+    <ListView SelectionChanged="Estimate_Changed" x:Name="Results" SelectionMode="Multiple" MaxHeight="1100">
       <ListView.ItemTemplate><DataTemplate>
         <Grid Padding="4,10" ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="120"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
           <Image Source="{Binding Cover}" Width="120" Height="74" Stretch="UniformToFill"/>
-          <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center"><TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap"/><TextBlock Text="{Binding PartTitle}" Opacity="0.65" TextWrapping="Wrap"/><TextBlock Text="{Binding FileName}" TextWrapping="Wrap" Opacity="0.75"/><Button Content="修改文件名" AutomationProperties.AutomationId="{Binding Id}" Tag="{Binding Id}" Click="Rename_Click"/></StackPanel>
+          <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center"><TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap"/><TextBlock Text="{Binding PartTitle}" Opacity="0.65" TextWrapping="Wrap"/><TextBlock Text="{Binding FileName}" TextWrapping="Wrap" Opacity="0.75"/><TextBlock Text="{Binding SizeText}" TextWrapping="Wrap" Opacity="0.65"/><Button Content="修改文件名" AutomationProperties.AutomationId="{Binding Id}" Tag="{Binding Id}" Click="Rename_Click"/></StackPanel>
         </Grid>
       </DataTemplate></ListView.ItemTemplate>
     </ListView>

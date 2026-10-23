@@ -16,6 +16,7 @@
        <AppBarButton Label="复制文件" Tag="{x:Bind}" Visibility="{x:Bind FileVisibility, Mode=OneWay}" Click="Copy_Click" Icon="Copy"/>
        <AppBarButton Label="文件夹" Tag="{x:Bind}" Visibility="{x:Bind FileVisibility, Mode=OneWay}" Click="Folder_Click" Icon="Folder"/>
        <AppBarButton Label="播放" Tag="{x:Bind}" Visibility="{x:Bind FileVisibility, Mode=OneWay}" Click="Open_Click" Icon="Play"/>
+       <AppBarButton Label="移除记录" Tag="{x:Bind}" Click="Remove_Click" Icon="Delete"/>
       </CommandBar>
      </StackPanel>
     </Border>
