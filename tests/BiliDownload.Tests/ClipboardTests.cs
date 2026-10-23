@@ -7,6 +7,13 @@ namespace BiliDownload.Tests;
 public sealed class ClipboardTests
 {
     private const string Link = "https://www.bilibili.com/video/BV1xx411c7mD?p=2";
+    [Fact] public void ActivationProtocolAcceptsOnlyLocalSnapshotIdentifiers()
+    {
+        var id = Guid.NewGuid(); var uri = ClipboardActivation.Create("bilidownload", id);
+        Assert.True(ClipboardActivation.TryParse(uri, "bilidownload", out var restored)); Assert.Equal(id, restored);
+        foreach (var invalid in new[] { uri + "?download=all", uri + "#x", uri.Replace("clipboard/", "other/"), uri.Replace("bilidownload:", "https:"), "bilidownload://clipboard/https://evil.example" })
+            Assert.False(ClipboardActivation.TryParse(invalid, "bilidownload", out _));
+    }
     [Fact] public void RecognizesOnlyPlayableLinksAndRemovesShareTracking()
     {
         Assert.Equal(Link, Assert.Single(ClipboardPolicy.Links(Link + "&share_source=copy_link")));

@@ -1,6 +1,6 @@
 using BiliDownload.Core;
 using Microsoft.Windows.AppNotifications;
-using Microsoft.Windows.AppNotifications.Builder;
+using System.Xml.Linq;
 
 namespace BiliDownload_Windows.Services;
 
@@ -13,13 +13,18 @@ public sealed class NotificationService : IDisposable
     {
         try
         {
+            if (!AppNotificationManager.IsSupported()) { Status = "系统通知不支持管理员方式运行，请以普通权限启动应用。"; return; }
+            NotificationProtocol.Register();
             AppNotificationManager.Default.NotificationInvoked += (_, e) => {
                 if (e.Arguments.TryGetValue("request", out var value) && Guid.TryParse(value, out var id)) activate(id);
             };
-            AppNotificationManager.Default.Register(App.IsAutomationTest ? "BiliDownload QA" : "BiliDownload", new Uri(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.png")));
+            AppNotificationManager.Default.Register();
             registered = true; RefreshStatus();
         }
-        catch (Exception) { Status = "系统通知注册失败，请以普通权限启动应用；仍可从托盘打开并粘贴链接。"; }
+        catch (Exception ex) {
+            if (App.IsAutomationTest) File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "qa-notification-error.txt"), ex.ToString());
+            Status = "系统通知注册失败，请以普通权限启动应用；仍可从托盘打开并粘贴链接。";
+        }
     }
     public void RefreshStatus()
     {
@@ -33,9 +38,12 @@ public sealed class NotificationService : IDisposable
         if (!registered) return;
         try
         {
-            var notification = new AppNotificationBuilder().AddArgument("request", request.Id.ToString("N"))
-                .AddText("检测到 B 站链接").AddText("点击打开 BiliDownload，按你的设置下载或选择内容。")
-                .BuildNotification();
+            // Protocol activation restores the app even after exit; the unguessable ID resolves only a local, unconsumed snapshot.
+            var payload = new XElement("toast", new XAttribute("activationType", "protocol"),
+                new XAttribute("launch", ClipboardActivation.Create(NotificationProtocol.Scheme, request.Id)),
+                new XElement("visual", new XElement("binding", new XAttribute("template", "ToastGeneric"),
+                    new XElement("text", "检测到 B 站链接"), new XElement("text", "点击打开 BiliDownload，按你的设置下载或选择内容。"))));
+            var notification = new AppNotification(payload.ToString());
             notification.Tag = request.Id.ToString("N"); notification.Group = "clipboard";
             notification.Expiration = request.CreatedAt.AddHours(24);
             AppNotificationManager.Default.Show(notification); RefreshStatus();
@@ -44,6 +52,7 @@ public sealed class NotificationService : IDisposable
     }
     public static async Task UninstallAsync()
     {
+        NotificationProtocol.Unregister();
         try {
             AppNotificationManager.Default.Register();
             await AppNotificationManager.Default.RemoveAllAsync();

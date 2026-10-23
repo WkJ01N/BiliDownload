@@ -4,7 +4,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 if (-not $PackageDirectory) { $PackageDirectory = Join-Path $projectRoot 'artifacts/windows-0.1.3' }
 $names = (Get-ChildItem -LiteralPath $PackageDirectory | Sort-Object Name).Name -join ','
 if ($names -ne 'app,BiliDownload.exe,docs') { throw "Unexpected publish root: $names" }
-foreach ($relative in @('app/BiliDownload.pri','app/Assets/AppIcon.ico','app/tools/ffmpeg.exe')) {
+foreach ($relative in @('app/BiliDownload.pri','app/Assets/AppIcon.ico','app/tools/ffmpeg.exe','app/Microsoft.WindowsAppRuntime.Insights.Resource.dll')) {
     if (-not (Test-Path -LiteralPath (Join-Path $PackageDirectory $relative))) { throw "Missing package resource: $relative" }
 }
 $root = Join-Path $projectRoot ('.build/directory-helper-test/' + [Guid]::NewGuid().ToString('N'))

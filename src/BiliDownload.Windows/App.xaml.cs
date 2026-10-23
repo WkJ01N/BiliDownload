@@ -31,7 +31,9 @@ public partial class App : Application
         var dataDirectory = IsAutomationTest ? Path.Combine(AppContext.BaseDirectory, "qa-data") : smoke ? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(arguments[2]))!, "smoke-data") :
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BiliDownload");
         instance = new(dataDirectory);
-        if (arguments.Contains("--uninstall-cleanup"))
+        var protocolActivation = arguments.Length == 2 && BiliDownload.Core.ClipboardActivation.TryParse(arguments[1], NotificationProtocol.Scheme, out _);
+        var notificationId = protocolActivation ? Guid.Parse(new Uri(arguments[1]).AbsolutePath.TrimStart('/')) : Guid.Empty;
+        if (arguments.Length == 2 && arguments[1] == "--uninstall-cleanup")
         {
             if (!instance.IsPrimary) {
                 try { await instance.ForwardAsync(new("exit")); } catch (Exception) { ReleaseInstance(); Exit(); return; }
@@ -61,7 +63,7 @@ public partial class App : Application
             }
             else
             {
-                try { await instance.ForwardAsync(new("open")); }
+                try { await instance.ForwardAsync(protocolActivation ? new("notification", notificationId) : new("open")); }
                 catch (Exception) { MessageBox(0, "BiliDownload 正在启动或退出，请稍后再试。", "BiliDownload", 0x40); }
                 ReleaseInstance(); Exit();
             }
@@ -82,6 +84,7 @@ public partial class App : Application
                     if (!receivedNotification && !Main.IsExiting) { Main.RestoreWindow(); Main.ShowMessage("系统未能传递此通知的链接，请重新复制或手动粘贴。"); }
                 }; expiry.Start();
             }
+            if (protocolActivation) Main.EnqueueActivation(new("notification", notificationId));
         }
         catch (Exception ex) { WriteSmokeFailure(ex); throw; }
         if (smoke)

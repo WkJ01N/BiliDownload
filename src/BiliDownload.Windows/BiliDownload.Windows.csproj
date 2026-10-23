@@ -13,16 +13,27 @@
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4948" />
     <!-- The WinUI component brings its required Foundation/Input dependencies, without AI/ML/Widgets. -->
     <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="1.8.260803003" />
+    <!-- Only extract the 34 KiB Insights resource needed by Foundation's notification API. -->
+    <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="1.8.260921001" GeneratePathProperty="true" ExcludeAssets="all" PrivateAssets="all" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
     <PackageReference Include="QRCoder" Version="1.8.1" />
     <ProjectReference Include="..\BiliDownload.Core\BiliDownload.Core.csproj" />
     <Content Include="Assets\**" CopyToOutputDirectory="PreserveNewest" />
     <None Remove="Package.appxmanifest" />
   </ItemGroup>
+  <Target Name="CopyNotificationResource" AfterTargets="CopyFilesToOutputDirectory"
+          Inputs="$(PkgMicrosoft_WindowsAppSDK_Runtime)\tools\MSIX\win10-x64\Microsoft.WindowsAppRuntime.1.8.msix"
+          Outputs="$(TargetDir)Microsoft.WindowsAppRuntime.Insights.Resource.dll">
+    <Exec Command="pwsh -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\scripts\copy-notification-resource.ps1&quot; -RuntimePackage &quot;$(PkgMicrosoft_WindowsAppSDK_Runtime)&quot; -OutputPath &quot;$(TargetDir)Microsoft.WindowsAppRuntime.Insights.Resource.dll&quot;" />
+  </Target>
   <Target Name="PublishWinUiResources" AfterTargets="ComputeFilesToPublish">
     <ItemGroup>
       <ResolvedFileToPublish Include="$(TargetDir)$(AssemblyName).pri" Condition="Exists('$(TargetDir)$(AssemblyName).pri')">
         <RelativePath>$(AssemblyName).pri</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+      <ResolvedFileToPublish Include="$(TargetDir)Microsoft.WindowsAppRuntime.Insights.Resource.dll">
+        <RelativePath>Microsoft.WindowsAppRuntime.Insights.Resource.dll</RelativePath>
         <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
       </ResolvedFileToPublish>
     </ItemGroup>

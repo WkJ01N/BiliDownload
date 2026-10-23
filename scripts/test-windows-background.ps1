@@ -8,6 +8,18 @@ using System.Runtime.InteropServices;
 public static class BackgroundNative {
  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hwnd, uint msg, IntPtr wp, IntPtr lp);
  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
+ public static void ActivateNotification(string clsid,string args) {
+   Guid classId=new Guid(clsid), iid=typeof(NotificationCallback).GUID;
+   NotificationCallback instance;
+   Marshal.ThrowExceptionForHR(CoCreateInstance(ref classId,IntPtr.Zero,4,ref iid,out instance));
+   try { ((NotificationCallback)instance).Activate("BiliDownload",args,IntPtr.Zero,0); }
+   finally { Marshal.ReleaseComObject(instance); }
+ }
+ [DllImport("ole32.dll")] private static extern int CoCreateInstance(ref Guid clsid,IntPtr outer,uint context,ref Guid iid,[MarshalAs(UnmanagedType.Interface)]out NotificationCallback instance);
+}
+[ComImport, Guid("53E31837-6600-4A81-9395-75CFFE746F94"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface NotificationCallback {
+ void Activate([MarshalAs(UnmanagedType.LPWStr)]string appId,[MarshalAs(UnmanagedType.LPWStr)]string args,IntPtr data,uint count);
 }
 '@
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -76,6 +88,17 @@ function Copy-Link([string]$Link) {
     } 'clipboard snapshot').Id
 }
 function Tasks { $response = Invoke-RestMethod ($script:endpoint.TrimEnd('/') + '/qa/tasks'); foreach ($task in $response) { $task } }
+function Native-Activation([string]$Id) {
+    $registration = Get-ChildItem 'HKCU:\Software\Classes\CLSID' | Where-Object {
+        $serverKey = Join-Path $_.PSPath 'LocalServer32'
+        if (-not (Test-Path -LiteralPath $serverKey)) { return $false }
+        $command = (Get-Item -LiteralPath $serverKey).GetValue('')
+        return $command -is [string] -and $command.IndexOf([IO.Path]::GetFullPath($exe),[StringComparison]::OrdinalIgnoreCase) -ge 0
+    } | Select-Object -First 1
+    if (-not $registration) { throw 'Native notification COM server is not registered.' }
+    Write-Output ("Native COM callback: " + $registration.PSChildName + '; merged registry=' + (Test-Path -LiteralPath ('Registry::HKEY_CLASSES_ROOT\CLSID\' + $registration.PSChildName + '\LocalServer32')))
+    [BackgroundNative]::ActivateNotification($registration.PSChildName, 'request=' + $Id)
+}
 function Scroll-Settings([double]$Percent) {
     $all = (Root).FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
     foreach ($element in $all) {
@@ -93,7 +116,12 @@ function Set-Options([bool]$Auto, [bool]$Expand) {
         $pattern = $toggle.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern)
         if (($pattern.Current.ToggleState -eq [System.Windows.Automation.ToggleState]::On) -ne $entry[1]) { $pattern.Toggle() }
     }
-    Scroll-Settings 100; Invoke-Control '保存设置'; Start-Sleep -Milliseconds 200
+    Scroll-Settings 100
+    $notificationNames = (Root).FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition) |
+        ForEach-Object { $_.Current.Name } | Where-Object { $_ -match '系统通知可用|Windows 已关闭|系统通知注册失败|系统通知发送失败|无法读取系统通知' }
+    Write-Output ('Notification runtime: ' + ($notificationNames -join ' / '))
+    if ($notificationNames -match '注册失败|发送失败') { throw 'Native notification registration or delivery failed.' }
+    Invoke-Control '保存设置'; Start-Sleep -Milliseconds 200
 }
 try {
     Wait-Until { Test-Path -LiteralPath (Join-Path $testRoot 'endpoint.txt') } 'fixture server' | Out-Null
@@ -104,7 +132,7 @@ try {
     if (-not [BackgroundNative]::IsWindowVisible($qa.MainWindowHandle)) { throw 'Cancel closed the window.' }
     Minimize-ToTray
     $id = Copy-Link 'https://www.bilibili.com/video/BV1xx411c7mD?p=2'
-    Forward 'notification' $id
+    Native-Activation $id
     $completed = Wait-Until { Tasks | Where-Object { $_.Item.Cid -eq 102 -and $_.State -eq 4 } } 'automatic P2 download and FFmpeg merge'
     if (-not (Test-Path -LiteralPath $completed.FilePath)) { throw 'Merged output is missing.' }
     Forward 'notification' $id; Start-Sleep -Milliseconds 400
@@ -135,14 +163,16 @@ try {
     Minimize-ToTray; $id = Copy-Link 'https://www.bilibili.com/cheese/play/ep201'
     Forward 'open'; Close-Window; Invoke-Control '退出应用'
     if (-not $qa.WaitForExit(8000)) { throw 'Explicit exit did not stop the process.' }
-    Start-QA; Forward 'notification' $id
+    $schemeHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes(($appDirectory + '\').ToUpperInvariant()))).Substring(0,12).ToLowerInvariant()
+    Start-Process -FilePath ('bilidownload-qa-' + $schemeHash + '://clipboard/' + ([Guid]$id).ToString('N')) -WindowStyle Hidden | Out-Null
+    $script:qa = Wait-Until { Get-Process -Name BiliDownload.QA -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe -and $_.MainWindowHandle -ne 0 } | Select-Object -First 1 } 'notification protocol cold-start window'
     Wait-Until { Tasks | Where-Object { $_.Item.Kind -eq 2 -and $_.Item.EpisodeId -eq 201 -and $_.State -eq 4 } } 'persisted activation after restart' | Out-Null
-    Write-Output 'PASS notification snapshot survives process exit and activation after restart'
+    Write-Output 'PASS notification protocol cold start and persisted snapshot after process exit'
     $other = Start-Process -FilePath $exe -WindowStyle Hidden -PassThru
     if (-not $other.WaitForExit(8000)) { throw 'Secondary process did not exit.' }
     Write-Output 'PASS secondary launch forwards to the existing instance'
     Close-Window; Invoke-Control '退出应用'; if (-not $qa.WaitForExit(8000)) { throw 'Final exit failed.' }
-    Set-Content -LiteralPath (Join-Path $testRoot 'result.txt') -Value 'PASS offline Windows background integration. Notification activation was injected through the same single-instance router; native shell delivery/click requires separate verification.'
+    Set-Content -LiteralPath (Join-Path $testRoot 'result.txt') -Value 'PASS offline Windows background integration, native notification registration, live COM callback and notification protocol cold start. Physical notification-center clicks and notification-disabled behavior need separate verification.'
     Write-Output "Results: $testRoot"
 } catch {
     if ($qa -and -not $qa.HasExited) {
