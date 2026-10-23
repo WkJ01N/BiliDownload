@@ -16,7 +16,9 @@ public sealed partial class HomePage : Page
     private MediaItem[] resolvedItems = [];
     private CancellationTokenSource? estimating;
     private readonly Dictionary<string, IReadOnlyList<MediaVariant>> estimates = new();
-    public sealed record ResultRow(MediaItem Item, string FileName) : System.ComponentModel.INotifyPropertyChanged {
+    public sealed class ResultRow(MediaItem item, string fileName) : System.ComponentModel.INotifyPropertyChanged {
+        public MediaItem Item { get; } = item;
+        public string FileName { get; } = fileName;
         private string sizeText = "选择后估算大小";
         public string SizeText { get => sizeText; set { sizeText = value; PropertyChanged?.Invoke(this, new(nameof(SizeText))); } }
         public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
