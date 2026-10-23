@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BiliDownload.Core/BiliDownload.Core.csproj" />
+    <Project Path="src/BiliDownload.Windows/BiliDownload.Windows.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BiliDownload.Tests/BiliDownload.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/BiliDownload.Probe/BiliDownload.Probe.csproj" />
+  </Folder>
+</Solution>

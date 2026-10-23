@@ -1,0 +1,17 @@
+<Page x:Class="BiliDownload_Windows.Pages.SettingsPage" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+ <ScrollViewer><StackPanel Padding="32,24" Spacing="20" MaxWidth="900" HorizontalAlignment="Stretch">
+  <TextBlock Text="设置" Style="{StaticResource TitleTextBlockStyle}"/>
+  <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="8" Padding="20"><StackPanel Spacing="12"><TextBlock Text="B 站账号" Style="{StaticResource SubtitleTextBlockStyle}"/><TextBlock x:Name="AccountStatus" Text="未登录 · 可下载游客可访问的内容" TextWrapping="Wrap"/><StackPanel Orientation="Horizontal" Spacing="10"><Button Content="扫码登录" Click="Login_Click"/><Button Content="退出登录" Click="Logout_Click"/></StackPanel><TextBlock Text="登录凭据仅在本机加密保存，退出时删除。可获取的画质和内容以账号权限为准。" Opacity="0.6" TextWrapping="Wrap"/></StackPanel></Border>
+  <TextBox x:Name="DirectoryBox" Header="视频保存目录"/><Button Content="选择保存目录" HorizontalAlignment="Left" Click="Directory_Click"/>
+  <TextBox x:Name="FfmpegBox" Header="FFmpeg 程序路径" PlaceholderText="ffmpeg 或 ffmpeg.exe 的完整路径"/>
+  <TextBlock Text="优先使用程序 tools 文件夹中的 ffmpeg.exe，也可以使用系统 PATH 中的 FFmpeg。" Opacity="0.6" TextWrapping="Wrap"/>
+  <ToggleSwitch x:Name="DetectSwitch" Header="窗口获得焦点时识别剪贴板" OffContent="关闭" OnContent="开启"/>
+  <ToggleSwitch x:Name="MonitorSwitch" Header="程序运行时监听剪贴板" OffContent="关闭" OnContent="开启"/>
+  <TextBlock Text="识别后仅显示提示，下载仍需确认。开启监听后，关闭窗口会收起到托盘；可右键托盘图标退出。" Opacity="0.6" TextWrapping="Wrap"/>
+  <ComboBox x:Name="ThemeBox" Header="外观" SelectedValuePath="Tag"><ComboBoxItem Content="跟随系统" Tag="Default"/><ComboBoxItem Content="浅色" Tag="Light"/><ComboBoxItem Content="深色" Tag="Dark"/></ComboBox>
+  <Button Content="保存设置" Style="{StaticResource AccentButtonStyle}" Click="Save_Click"/>
+  <InfoBar x:Name="Notice" IsOpen="False"/>
+  <TextBlock Text="BiliDownload · Windows 预览版 0.1.1" Opacity="0.6"/>
+  <HyperlinkButton Content="GitHub 仓库 · WkJ01N/BiliDownload" NavigateUri="https://github.com/WkJ01N/BiliDownload" Padding="0,8" HorizontalAlignment="Left"/>
+ </StackPanel></ScrollViewer>
+</Page>
