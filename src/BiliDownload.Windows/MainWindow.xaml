@@ -5,10 +5,11 @@
       <SolidColorBrush x:Key="NavigationViewItemBackgroundSelected" Color="#2240BFC0"/>
       <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPointerOver" Color="#3340BFC0"/>
     </Grid.Resources>
-    <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+    <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
     <Grid x:Name="TitleRegion" Padding="20,0,150,0"><StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center"><Image Source="ms-appx:///Assets/AppIcon.png" Width="24" Height="24"/><TextBlock Text="BiliDownload" FontWeight="SemiBold"/><TextBlock x:Name="TitleSubtitle" Text="视频随手保存，分享更方便" Opacity="0.6" Margin="16,0,0,0"/></StackPanel></Grid>
-    <InfoBar x:Name="ClipboardNotice" Grid.Row="1" IsOpen="False" Severity="Informational" Title="发现 B 站链接" Message="打开解析页面后，选择内容并确认下载。"><InfoBar.ActionButton><Button Content="查看链接" Click="ViewClipboard_Click"/></InfoBar.ActionButton></InfoBar>
-    <NavigationView x:Name="Navigation" Grid.Row="2" SelectionChanged="Navigation_SelectionChanged" IsBackButtonVisible="Collapsed" OpenPaneLength="220" PaneDisplayMode="Auto" IsSettingsVisible="True">
+    <InfoBar x:Name="ClipboardNotice" Grid.Row="1" IsOpen="False" Severity="Informational" Title="发现 B 站链接" Message="打开解析页面后，选择内容并确认下载。"><InfoBar.ActionButton><Button x:Name="ViewClipboardButton" Content="查看链接" Click="ViewClipboard_Click"/></InfoBar.ActionButton></InfoBar>
+    <InfoBar x:Name="BehaviorNotice" Grid.Row="2" IsOpen="False" Severity="Informational" Title="后台链接提示已启用" Message="后台复制 B 站链接会显示系统通知，点击后按设置下载。可在设置中关闭监听或自动下载。"><InfoBar.ActionButton><Button Content="关闭监听" Click="DisableClipboard_Click"/></InfoBar.ActionButton></InfoBar>
+    <NavigationView x:Name="Navigation" Grid.Row="3" SelectionChanged="Navigation_SelectionChanged" IsBackButtonVisible="Collapsed" OpenPaneLength="220" PaneDisplayMode="Auto" IsSettingsVisible="True">
       <NavigationView.MenuItems>
         <NavigationViewItem Content="链接解析" Tag="home" IsSelected="True"><NavigationViewItem.Icon><SymbolIcon Symbol="Link"/></NavigationViewItem.Icon></NavigationViewItem>
         <NavigationViewItem Content="下载队列" Tag="queue"><NavigationViewItem.Icon><SymbolIcon Symbol="Download"/></NavigationViewItem.Icon></NavigationViewItem>

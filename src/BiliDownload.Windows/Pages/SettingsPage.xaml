@@ -18,11 +18,15 @@
   </StackPanel></Border>
   <ToggleSwitch x:Name="DetectSwitch" Header="窗口获得焦点时识别剪贴板" OffContent="关闭" OnContent="开启"/>
   <ToggleSwitch x:Name="MonitorSwitch" Header="程序运行时监听剪贴板" OffContent="关闭" OnContent="开启"/>
-  <TextBlock Text="识别后仅显示提示，下载仍需确认。开启监听后，关闭窗口会收起到托盘；可右键托盘图标退出。" Opacity="0.6" TextWrapping="Wrap"/>
+  <ToggleSwitch x:Name="AutoDownloadSwitch" AutomationProperties.AutomationId="AutoDownloadSwitch" Header="点击通知后自动下载" OffContent="先解析，确认后下载" OnContent="下载链接指定的单项"/>
+  <ToggleSwitch x:Name="ExpandRelatedSwitch" AutomationProperties.AutomationId="ExpandRelatedSwitch" Header="展开其他分 P／集供选择" OffContent="仅处理链接指定条目" OnContent="展示完整列表，勾选后下载"/>
+  <TextBlock Text="后台识别链接时发送系统通知。展开其他分 P／集时始终先确认选择。关闭窗口时可选择最小化到托盘或退出；退出后停止监听。" Opacity="0.6" TextWrapping="Wrap"/>
+  <TextBlock x:Name="NotificationStatus" TextWrapping="Wrap"/>
+  <HyperlinkButton Content="打开 Windows 通知设置" NavigateUri="ms-settings:notifications" Padding="0,8" HorizontalAlignment="Left"/>
   <ComboBox x:Name="ThemeBox" Header="外观" SelectedValuePath="Tag"><ComboBoxItem Content="跟随系统" Tag="Default"/><ComboBoxItem Content="浅色" Tag="Light"/><ComboBoxItem Content="深色" Tag="Dark"/></ComboBox>
   <Button Content="保存设置" Style="{StaticResource AccentButtonStyle}" Click="Save_Click"/>
   <InfoBar x:Name="Notice" IsOpen="False"/>
-  <TextBlock Text="BiliDownload · Windows 预览版 0.1.2" Opacity="0.6"/>
+  <TextBlock Text="BiliDownload · Windows 预览版 0.1.3" Opacity="0.6"/>
   <HyperlinkButton Content="GitHub 仓库 · WkJ01N/BiliDownload" NavigateUri="https://github.com/WkJ01N/BiliDownload" Padding="0,8" HorizontalAlignment="Left"/>
  </StackPanel></ScrollViewer>
 </Page>

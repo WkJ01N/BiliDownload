@@ -2,7 +2,7 @@
 
 B 站视频下载与快捷分享工具，免费开源，完全在本地运行。Windows 使用 C# / .NET 10 / WinUI 3 官方导航模板；Android 使用 Kotlin / Jetpack Compose。
 
-## 当前版本：0.1.2 开发预览
+## 当前版本：Windows 0.1.3 / Android 0.1.2 开发预览
 
 - 导入完整视频链接、b23.tv 短链接、BV/av 号和分享文案；多链接及多 P、剧集、课程条目选择。
 - 普通投稿、番剧影视、课程的独立解析适配器；已发布为普通投稿的直播回放走投稿下载链路。
@@ -13,6 +13,15 @@ B 站视频下载与快捷分享工具，免费开源，完全在本地运行。
 
 这是开发预览版，尚未达到公开稳定版验收状态。当前开发环境真实 B 站接口探测返回 HTTP 412，因此普通投稿到番剧、课程的在线下载与登录尚未完成真实账号验证。Android 已通过构建、单元测试和 Lint 错误检查，本机没有连接设备或可用模拟器，后台生命周期、系统媒体合并以及微信/QQ 分享仍需设备实测。Windows 已完成启动及界面渲染检查、本地 HTTP 下载与 FFmpeg 合并检查。独立直播回放链接尚未适配；直播录制、音频单独导出、字幕、弹幕、压缩、收藏夹及 UP 主批量下载不在本预览版内。
 
+
+## Windows 0.1.3 改进
+
+- 修复安装选项左侧裁切，组件名称与说明分离；中英文向导保留控件留白，窗口按 DPI 和屏幕工作区调整。
+- 新安装优先 `D:\Program Files\BiliDownload`，D 盘不可用时回退系统 Program Files；升级保留原路径。仍仅为当前用户安装，目录受限时由原生辅助程序准备专用文件夹，不修改父目录权限。
+- 关闭窗口时询问最小化到托盘、退出或取消。后台下载继续运行，退出保存任务状态，托盘可恢复窗口或直接退出。
+- 后台剪贴板监听默认开启，检测阶段不请求 B 站接口。系统通知点击后默认下载链接指定的 P／集，通知保留 24 小时独立快照并只消费一次。
+- 设置可关闭监听或自动下载，也可开启“展开其他分 P／集供选择”。展开模式、整季入口及多链接先确认；手动解析保留完整目录。
+- 单实例启动复用现有窗口。412、登录失效或 FFmpeg 缺失时保留操作并提供恢复入口，不自动循环登录或重试。
 
 ## 0.1.2 改进
 
@@ -35,11 +44,11 @@ B 站视频下载与快捷分享工具，免费开源，完全在本地运行。
 
 ## 运行
 
-Windows 10 22H2 / Windows 11 x64：运行 `artifacts/BiliDownload-0.1.2-windows-x64-setup.exe` 安装，默认只安装到当前用户，无需管理员权限。也可解压便携包 `artifacts/BiliDownload-0.1.2-windows-x64-portable.zip` 后运行根目录 `BiliDownload.exe`。根目录仅含启动程序、`app/` 和 `docs/`；运行时、WinUI 资源和 FFmpeg 位于 `app/`，文档及依赖许可位于 `docs/`。粘贴链接、解析、勾选条目后下载；在“已完成”中复制文件，再粘贴到支持文件粘贴的聊天应用。复制文件不保证聊天应用会将它当作内嵌视频发送。
+Windows 10 22H2 / Windows 11 x64：运行 `artifacts/BiliDownload-0.1.3-windows-x64-setup.exe` 安装，默认仅为当前用户安装，目录受限时申请管理员授权；主程序以普通权限运行。也可解压便携包 `artifacts/BiliDownload-0.1.3-windows-x64-portable.zip` 后运行根目录 `BiliDownload.exe`。根目录仅含启动程序、`app/` 和 `docs/`；运行时、WinUI 资源和 FFmpeg 位于 `app/`，文档及依赖许可位于 `docs/`。粘贴链接、解析、勾选条目后下载；在“已完成”中复制文件，再粘贴到支持文件粘贴的聊天应用。复制文件不保证聊天应用会将它当作内嵌视频发送。
 
 Android 10+：安装 `artifacts/android/BiliDownload-0.1.2-preview.apk`。这是使用开发调试密钥签名的预览包，正式公开发行前需要配置专用发布签名。可从 B 站分享给本应用，也可粘贴链接。下载默认保存至 `Movies/BiliDownload`，设置中可通过系统目录选择器改变位置。通过“分享视频”选择接收应用。
 
-剪贴板识别默认关闭。Android 系统限制后台读取剪贴板，快捷方式和快捷设置磁贴会先打开本应用再读取。Windows 开启后台监听后，关闭窗口会收起到托盘；右键托盘图标退出。应用没有开机自启和遥测。
+Windows 后台监听默认开启，升级首次启动会说明新增行为并提供关闭入口，此后保留用户选择。关闭窗口可选择进入托盘或退出，退出后停止监听。Windows 通知受系统通知设置与勿扰模式影响，主程序须以普通权限运行。Android 剪贴板识别仍默认关闭；系统限制后台读取，快捷方式和快捷设置磁贴会先打开本应用再读取。应用没有开机自启和遥测。
 
 ## 构建与验证
 
@@ -52,7 +61,7 @@ dotnet test tests/BiliDownload.Tests/BiliDownload.Tests.csproj
 ./scripts/build-windows.ps1 -FfmpegDirectory C:/path/to/lgpl-tools
 ```
 
-发布目录 `artifacts/windows-0.1.2/` 包含 .NET 和 Windows App SDK 运行时。自包含部署不使用裁剪，避免破坏 XAML 绑定与 SQLite。安装器、便携 ZIP 使用同一目录结构；升级、卸载保留 `%LOCALAPPDATA%/BiliDownload` 中的设置与历史以及用户视频。`-SkipInstaller` 可仅构建便携包。`scripts/test-windows-ui.ps1` 验证窄窗口操作栏，`scripts/test-installer.ps1` 使用独立 QA 安装标识验证安装和卸载，不替换用户安装。
+发布目录 `artifacts/windows-0.1.3/` 包含 .NET 和 Windows App SDK 运行时。自包含部署不使用裁剪，避免破坏 XAML 绑定与 SQLite。安装器、便携 ZIP 使用同一目录结构；升级、卸载保留 `%LOCALAPPDATA%/BiliDownload` 中的设置与历史以及用户视频。`-SkipInstaller` 可仅构建便携包。`scripts/test-windows-ui.ps1` 验证窄窗口操作栏，`scripts/test-installer.ps1` 使用独立 QA 安装标识验证安装和卸载，不替换用户安装。`scripts/test-install-directory.ps1` 检查原生目录助手与发布结构；`pwsh -STA -File scripts/test-installer-ui.ps1` 检查中英文向导；`pwsh -STA -File scripts/test-windows-background.ps1` 使用重命名的隔离 QA 程序和本地接口验证后台流程，需要 Python 3 和 Windows Media Foundation。
 
 Android 需要 JDK 21、Android SDK Platform 36 / Build Tools 36.0.0。设置 `ANDROID_HOME`，或在 `android/local.properties` 配置本机 `sdk.dir`（该文件不提交）。
 

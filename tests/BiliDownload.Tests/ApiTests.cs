@@ -14,7 +14,7 @@ public sealed class ApiTests
     {
         using var client = Client(_ => View);
         var catalog = Assert.Single(await client.ResolveAsync("https://www.bilibili.com/video/BV1xx411c7mD?p=2"));
-        Assert.Equal(2, catalog.Items.Count); Assert.Equal(12, catalog.Items[0].Cid);
+        Assert.Equal(2, catalog.Items.Count); Assert.Equal(11, catalog.Items[0].Cid); Assert.Equal("video:12", catalog.TargetItemId);
     }
     [Theory] [InlineData("bangumi", MediaKind.Bangumi)] [InlineData("cheese", MediaKind.Course)]
     public async Task ResolvesEpisodes(string type, MediaKind expected)
@@ -22,6 +22,20 @@ public sealed class ApiTests
         using var client = Client(_ => Episode);
         var catalog = Assert.Single(await client.ResolveAsync($"https://www.bilibili.com/{type}/play/ep1"));
         Assert.Equal(expected, Assert.Single(catalog.Items).Kind);
+        Assert.Equal($"{expected}:1", catalog.TargetItemId);
+    }
+    [Theory] [InlineData("ep2", "Bangumi:2")] [InlineData("ss2", null)]
+    public async Task EpisodeTargetDoesNotAssumeFirstEpisode(string link, string? target)
+    {
+        using var client = Client(_ => """{"code":0,"result":{"title":"系列","episodes":[{"id":1,"title":"一"},{"id":2,"title":"二"}]}}""");
+        var catalog = Assert.Single(await client.ResolveAsync("https://www.bilibili.com/bangumi/play/" + link));
+        Assert.Equal(target, catalog.TargetItemId); Assert.Equal(1, catalog.Items[0].EpisodeId);
+    }
+    [Theory] [InlineData("", "video:11")] [InlineData("?p=99", null)] [InlineData("?p=bad", null)]
+    public async Task DefaultAndInvalidPagesDoNotDownloadWrongPart(string query, string? target)
+    {
+        using var client = Client(_ => View);
+        Assert.Equal(target, Assert.Single(await client.ResolveAsync("https://www.bilibili.com/video/BV1xx411c7mD" + query)).TargetItemId);
     }
     [Fact] public async Task AnonymousNavigationStillProvidesSigningKeys()
     {
@@ -29,6 +43,12 @@ public sealed class ApiTests
         var item = (await client.ResolveAsync("BV1xx411c7mD"))[0].Items[0];
         var plan = await client.GetPlanAsync(item, 80);
         Assert.Equal(80, plan.Variant.Quality); Assert.NotNull(plan.Audio); Assert.Single(plan.Video);
+    }
+    [Fact] public async Task MultipleLinksToSameVideoKeepBothRequestedParts()
+    {
+        using var client = Client(_ => View);
+        var catalogs = await client.ResolveAsync("https://www.bilibili.com/video/BV1xx411c7mD?p=1 https://www.bilibili.com/video/BV1xx411c7mD?p=2");
+        Assert.Equal(new[] { 11L, 12L }, ClipboardPolicy.VisibleItems(new("D:/Videos"), catalogs).Select(i => i.Cid));
     }
     [Theory] [InlineData("\"is_preview\":true", "试看")] [InlineData("\"is_drm\":1", "保护")]
     public async Task RefusesIncompleteOrProtectedSource(string field, string expected)
@@ -39,6 +59,27 @@ public sealed class ApiTests
         Assert.Contains(expected, exception.Message);
     }
     private static BiliClient Client(Func<HttpRequestMessage, string> respond) => new(new Handler(respond));
+    [Fact] public async Task ShortLinkKeepsRequestedPageAfterRedirect()
+    {
+        using var client = new BiliClient(new ShortHandler(HttpStatusCode.Redirect));
+        Assert.Equal("video:12", Assert.Single(await client.ResolveAsync("https://b23.tv/short")).TargetItemId);
+    }
+    [Theory] [InlineData(412, BiliErrorKind.RequestRestricted)] [InlineData(401, BiliErrorKind.LoginRequired)]
+    public async Task ShortLinkFailuresKeepRecoveryCategory(int status, BiliErrorKind kind)
+    {
+        using var client = new BiliClient(new ShortHandler((HttpStatusCode)status));
+        var exception = await Assert.ThrowsAsync<BiliException>(() => client.ResolveAsync("https://b23.tv/short"));
+        Assert.Equal(kind, exception.Kind); Assert.Equal(status, exception.HttpStatus);
+    }
+    private sealed class ShortHandler(HttpStatusCode status) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            var response = new HttpResponseMessage(request.RequestUri!.Host == "b23.tv" ? status : HttpStatusCode.OK) { Content = new StringContent(View) };
+            if (response.StatusCode == HttpStatusCode.Redirect) response.Headers.Location = new Uri("https://www.bilibili.com/video/BV1xx411c7mD?p=2");
+            return Task.FromResult(response);
+        }
+    }
     private sealed class Handler(Func<HttpRequestMessage, string> respond) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>

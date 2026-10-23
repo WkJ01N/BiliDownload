@@ -27,7 +27,7 @@ public static class LoginFlow
             var dialog = new ContentDialog { Title = "登录 B 站", Content = panel, CloseButtonText = "关闭", XamlRoot = root };
             using var cancel = new CancellationTokenSource(TimeSpan.FromMinutes(3));
             var outcome = new LoginResult(LoginOutcome.Canceled);
-            var shown = dialog.ShowAsync();
+            var shown = DialogCoordinator.ShowAsync(dialog);
             async Task PollAsync()
             {
                 try

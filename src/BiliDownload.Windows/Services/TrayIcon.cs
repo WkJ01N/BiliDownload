@@ -9,25 +9,22 @@ public sealed class TrayIcon : IDisposable
     private readonly SubclassProc callback;
     private readonly Action open;
     private readonly Action exit;
+    private readonly uint taskbarCreated = RegisterWindowMessage("TaskbarCreated");
+    public bool IsAvailable { get; private set; }
     public TrayIcon(nint window, Action open, Action exit)
     {
         this.open = open; this.exit = exit; callback = WindowProc;
         data = new Data { Size = (uint)Marshal.SizeOf<Data>(), Window = window, Id = 1, Flags = 7, Message = Callback,
             Icon = LoadImage(0, Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"), 1, 16, 16, 0x10),
             Tip = "BiliDownload · 双击打开，右键退出", Info = "", InfoTitle = "" };
-        SetWindowSubclass(window, callback, 2, 0); ShellNotifyIcon(0, ref data);
-    }
-    public void NotifyLink()
-    {
-        data.Flags = 7 | 0x10; data.InfoTitle = "发现 B 站链接";
-        data.Info = "点击打开 BiliDownload，选择内容并确认下载。"; data.InfoFlags = 1;
-        ShellNotifyIcon(1, ref data); data.Flags = 7;
+        SetWindowSubclass(window, callback, 2, 0); IsAvailable = ShellNotifyIcon(0, ref data);
     }
     private nint WindowProc(nint hwnd, uint message, nuint wp, nint lp, nuint id, nuint reference)
     {
+        if (message == taskbarCreated) IsAvailable = ShellNotifyIcon(0, ref data);
         if (message == Callback)
         {
-            if ((long)lp is 0x203 or 0x405) open();
+            if ((long)lp == 0x203) open();
             else if ((long)lp == 0x205)
             {
                 var menu = CreatePopupMenu();
@@ -68,4 +65,5 @@ public sealed class TrayIcon : IDisposable
     [DllImport("user32.dll")] private static extern bool DestroyMenu(nint menu);
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint window);
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out Point point);
+    [DllImport("user32.dll", EntryPoint = "RegisterWindowMessageW", CharSet = CharSet.Unicode)] private static extern uint RegisterWindowMessage(string message);
 }

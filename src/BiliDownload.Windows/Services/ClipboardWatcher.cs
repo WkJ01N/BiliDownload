@@ -10,8 +10,10 @@ public sealed class ClipboardWatcher : IDisposable
     public ClipboardWatcher(nint window, Action changed)
     {
         this.window = window; this.changed = changed; callback = WindowProc;
-        if (!SetWindowSubclass(window, callback, 1, 0) || !AddClipboardFormatListener(window))
-            throw new InvalidOperationException("无法注册剪贴板监听。");
+        if (!SetWindowSubclass(window, callback, 1, 0)) throw new InvalidOperationException("无法注册剪贴板监听。");
+        if (!AddClipboardFormatListener(window)) {
+            RemoveWindowSubclass(window, callback, 1); throw new InvalidOperationException("无法注册剪贴板监听。");
+        }
     }
     private nint WindowProc(nint hwnd, uint message, nuint wparam, nint lparam, nuint id, nuint data)
     {

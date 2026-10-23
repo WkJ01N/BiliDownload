@@ -3,7 +3,7 @@ namespace BiliDownload.Core;
 public enum MediaKind { Video, Bangumi, Course }
 public record MediaItem(string Id, string Title, string PartTitle, string Cover, MediaKind Kind,
     long Aid, string Bvid, long Cid, long EpisodeId, int Index, string PageUrl);
-public record MediaCatalog(string Title, IReadOnlyList<MediaItem> Items);
+public record MediaCatalog(string Title, IReadOnlyList<MediaItem> Items, string? TargetItemId = null);
 public record MediaVariant(int Quality, string Label, int Height, string Codec);
 public record StreamPart(string Key, string Url, string[] Backups);
 public record DownloadPlan(MediaVariant Variant, IReadOnlyList<StreamPart> Video, StreamPart? Audio);
@@ -12,7 +12,8 @@ public record DownloadTaskData(Guid Id, MediaItem Item, int Quality, string Dire
     DownloadState State = DownloadState.Queued, double Progress = 0, string Message = "等待下载",
     string? FilePath = null, DateTimeOffset CreatedAt = default, BiliErrorKind? FailureKind = null);
 public record AppSettings(string DownloadDirectory, string FfmpegPath = "ffmpeg",
-    bool DetectOnActivate = false, bool MonitorClipboard = false, string Theme = "Default");
+    bool DetectOnActivate = false, bool MonitorClipboard = true, string Theme = "Default",
+    bool AutoDownloadOnNotificationClick = true, bool ExpandRelatedItems = false, int ClipboardBehaviorVersion = 0);
 public enum BiliErrorKind { Unknown, LoginRequired, RequestRestricted }
 public enum SessionState { Guest, Saved, Authenticated, Expired }
 public enum LoginOutcome { Success, Canceled, Failed }

@@ -17,6 +17,9 @@ jobs:
       - name: Publish preview
         shell: pwsh
         run: ./scripts/build-windows.ps1
+      - name: Verify package and install directory helper
+        shell: pwsh
+        run: ./scripts/test-install-directory.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: BiliDownload-Windows-x64-preview

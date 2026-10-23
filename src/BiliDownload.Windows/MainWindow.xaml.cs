@@ -12,8 +12,14 @@ public sealed partial class MainWindow : Window
     private ClipboardWatcher? watcher;
     private TrayIcon? tray;
     private bool exiting;
-    private string? pendingClipboard;
+    private bool allowClose, closePrompt, systemClosing, foreground;
+    private Guid? pendingClipboard;
     private string? lastClipboard;
+    private int clipboardRevision;
+    private SystemLifetime? lifetime;
+    private readonly Queue<ActivationRequest> activations = new();
+    private bool processingActivation;
+    public bool IsExiting => exiting;
     private bool expectCommands;
     private string[] expectedLabels = [];
     public MainWindow()
@@ -24,15 +30,94 @@ public sealed partial class MainWindow : Window
         ApplyTheme();
         Root.SizeChanged += (_, e) => TitleSubtitle.Visibility = e.NewSize.Width >= 720 ? Visibility.Visible : Visibility.Collapsed;
         if (ContentFrame.Content == null) ContentFrame.Navigate(typeof(HomePage));
-        tray = new(WinRT.Interop.WindowNative.GetWindowHandle(this), () => { AppWindow.Show(); Activate(); if (pendingClipboard != null) ViewClipboard_Click(this, new RoutedEventArgs()); }, () => { exiting = true; Close(); });
-        AppWindow.Closing += (_, e) => { if (!exiting && App.Services.Settings.MonitorClipboard) { e.Cancel = true; AppWindow.Hide(); } };
-        Activated += async (_, e) => { if (e.WindowActivationState != WindowActivationState.Deactivated && App.Services.Settings.DetectOnActivate) await CheckClipboardAsync(); };
+        tray = new(WinRT.Interop.WindowNative.GetWindowHandle(this), RestoreWindow, () => _ = RequestExitAsync());
+        lifetime = new(WinRT.Interop.WindowNative.GetWindowHandle(this), () => systemClosing = true,
+            ending => { systemClosing = ending; if (ending) _ = RequestExitAsync(); });
+        AppWindow.Closing += async (_, e) => {
+            if (allowClose) return;
+            e.Cancel = true;
+            if (systemClosing) { await RequestExitAsync(); return; }
+            if (exiting || closePrompt) return;
+            closePrompt = true;
+            try {
+                var dialog = new ContentDialog { XamlRoot = Root.XamlRoot, Title = "关闭 BiliDownload",
+                    Content = "最小化到托盘后，下载会继续运行。退出应用将暂停未完成任务，下次可继续。",
+                    PrimaryButtonText = "最小化到托盘", SecondaryButtonText = "退出应用", CloseButtonText = "取消",
+                    DefaultButton = ContentDialogButton.Primary };
+                var result = await DialogCoordinator.ShowAsync(dialog);
+                if (result == ContentDialogResult.Primary) {
+                    if (tray?.IsAvailable == true) AppWindow.Hide();
+                    else ShowMessage("托盘图标暂时不可用，窗口已保留。可以稍后重试或选择退出应用。");
+                } else if (result == ContentDialogResult.Secondary) await RequestExitAsync();
+            } finally { closePrompt = false; }
+        };
+        Activated += async (_, e) => {
+            foreground = e.WindowActivationState != WindowActivationState.Deactivated;
+            if (foreground && App.Services.Settings.DetectOnActivate) await CheckClipboardAsync();
+        };
         try { watcher = new(WinRT.Interop.WindowNative.GetWindowHandle(this), () => { if (App.Services.Settings.MonitorClipboard) DispatcherQueue.TryEnqueue(async () => await CheckClipboardAsync()); }); }
-        catch (InvalidOperationException) { ClipboardNotice.Message = "系统暂时无法监听剪贴板，仍可手动粘贴链接。"; }
-        Closed += async (_, _) => { watcher?.Dispose(); tray?.Dispose(); await App.Services.DisposeAsync(); };
+        catch (InvalidOperationException) { ShowMessage("系统暂时无法监听剪贴板，仍可手动粘贴链接。"); }
+        Closed += (_, _) => { watcher?.Dispose(); tray?.Dispose(); lifetime?.Dispose(); };
+        BehaviorNotice.IsOpen = App.Services.ClipboardMigrationNotice;
     }
     public void ApplyTheme() => Root.RequestedTheme = App.Services.Settings.Theme switch { "Light" => ElementTheme.Light, "Dark" => ElementTheme.Dark, _ => ElementTheme.Default };
-    public void ExitApplication() { exiting = true; Close(); }
+    public void ExitApplication() => _ = RequestExitAsync();
+    public async Task RequestExitAsync()
+    {
+        if (exiting) return; exiting = true;
+        (ContentFrame.Content as HomePage)?.CancelPending();
+        watcher?.Dispose(); watcher = null;
+        try { await App.Services.DisposeAsync(); }
+        finally { tray?.Dispose(); tray = null; lifetime?.Dispose(); lifetime = null; App.ReleaseInstance(); allowClose = true; Close(); }
+    }
+    public void RestoreWindow()
+    {
+        AppWindow.Show();
+        (AppWindow.Presenter as Microsoft.UI.Windowing.OverlappedPresenter)?.Restore();
+        Activate(); SetForegroundWindow(WinRT.Interop.WindowNative.GetWindowHandle(this));
+    }
+    public void OpenSettings() { Navigation.SelectedItem = Navigation.SettingsItem; ContentFrame.Navigate(typeof(SettingsPage)); }
+    public void OpenQueue()
+    {
+        Navigation.SelectedItem = Navigation.MenuItems.OfType<NavigationViewItem>().First(i => i.Tag as string == "queue");
+        ContentFrame.Navigate(typeof(QueuePage), "queue");
+    }
+    public void EnqueueActivation(ActivationRequest request)
+    {
+        if (exiting) return;
+        if (request.Action == "exit") { _ = RequestExitAsync(); return; }
+        activations.Enqueue(request); if (!processingActivation) _ = ProcessActivationsAsync();
+    }
+    private async Task ProcessActivationsAsync()
+    {
+        processingActivation = true;
+        try {
+            while (activations.TryDequeue(out var activation) && !exiting) {
+                if (activation.Action == "exit") { await RequestExitAsync(); break; }
+                await DialogCoordinator.WaitForIdleAsync();
+                if (exiting) break;
+                RestoreWindow();
+                if (activation.Action == "open") continue;
+                try {
+                    var request = activation.Id is { } id ? App.Services.ClipboardRequests.Consume(id) : null;
+                    if (request == null) { ShowMessage("此链接提示已处理或已超过 24 小时，请重新复制链接。"); continue; }
+                    ClipboardNotice.IsOpen = false; pendingClipboard = null;
+                    Navigation.SelectedItem = Navigation.MenuItems.OfType<NavigationViewItem>().First(i => i.Tag as string == "home");
+                    if (ContentFrame.Content is not HomePage) ContentFrame.Navigate(typeof(HomePage));
+                    await ((HomePage)ContentFrame.Content).OpenClipboardAsync(request, activation.Action == "notification");
+                } catch (Exception) { ShowMessage("无法处理此通知，请重新复制链接，或手动粘贴后解析。"); }
+            }
+        } finally { processingActivation = false; }
+    }
+    public void ShowMessage(string message)
+    {
+        ClipboardNotice.Title = "提示"; ClipboardNotice.Message = message; ClipboardNotice.IsOpen = true;
+        ViewClipboardButton.IsEnabled = pendingClipboard.HasValue;
+    }
+    private void DisableClipboard_Click(object sender, RoutedEventArgs e)
+    {
+        App.Services.SaveSettings(App.Services.Settings with { MonitorClipboard = false }); BehaviorNotice.IsOpen = false;
+    }
     public void ConfigureSmoke(int width, string page, string state)
     {
         var scale = Root.XamlRoot?.RasterizationScale ?? 1.5;
@@ -107,21 +192,28 @@ public sealed partial class MainWindow : Window
     }
     public async Task CheckClipboardAsync()
     {
+        var revision = ++clipboardRevision;
         try
         {
+            await Task.Delay(120);
+            if (revision != clipboardRevision || exiting) return;
             var content = Clipboard.GetContent();
-            if (!content.Contains(StandardDataFormats.Text)) return;
+            if (!content.Contains(StandardDataFormats.Text)) { lastClipboard = null; return; }
             var text = await content.GetTextAsync();
-            if (text == lastClipboard || LinkParser.Extract(text).Count == 0) return;
-            lastClipboard = text; pendingClipboard = text; ClipboardNotice.IsOpen = true;
-            // Flash the taskbar without taking focus away from the user's current app.
-            if (App.Services.Settings.MonitorClipboard) { FlashWindow(WinRT.Interop.WindowNative.GetWindowHandle(this), true); tray?.NotifyLink(); }
+            if (revision != clipboardRevision || exiting) return;
+            var links = ClipboardPolicy.Links(text); var signature = string.Join('\n', links);
+            if (signature == lastClipboard) return;
+            lastClipboard = signature; if (links.Length == 0) return;
+            var request = App.Services.ClipboardRequests.Create(links); pendingClipboard = request.Id;
+            ClipboardNotice.Title = "发现 B 站链接"; ClipboardNotice.Message = "打开后可解析并选择下载内容。";
+            ViewClipboardButton.IsEnabled = true; ClipboardNotice.IsOpen = true;
+            if (!foreground && App.Services.Settings.MonitorClipboard) App.Services.Notifications.Show(request);
         }
-        catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException or InvalidOperationException) { }
+        catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException or InvalidOperationException or IOException or UnauthorizedAccessException) { }
     }
-    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool FlashWindow(nint window, bool invert);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint window);
     private void ViewClipboard_Click(object sender, RoutedEventArgs e)
     {
-        ContentFrame.Navigate(typeof(HomePage), pendingClipboard); pendingClipboard = null; ClipboardNotice.IsOpen = false; AppWindow.Show(); Activate();
+        if (pendingClipboard is { } id) EnqueueActivation(new("preview", id));
     }
 }

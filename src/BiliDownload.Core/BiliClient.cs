@@ -75,15 +75,15 @@ public sealed partial class BiliClient : IMediaService, IDisposable
                     new MediaItem($"video:{p.Num("cid")}", title, p.Str("part"), data.Str("pic"), MediaKind.Video,
                         data.Num("aid"), bvid, p.Num("cid"), 0, i + 1, $"https://www.bilibili.com/video/{bvid}?p={i + 1}")).ToArray());
                 var selectedPage = ParseQuery(uri).GetValueOrDefault("p");
-                if (int.TryParse(selectedPage, out var page) && page > 0)
-                    catalog = catalog with { Items = catalog.Items.OrderByDescending(p => p.Index == page).ToArray() };
+                var page = selectedPage == null ? 1 : int.TryParse(selectedPage, out var parsedPage) ? parsedPage : 0;
+                catalog = catalog with { TargetItemId = catalog.Items.FirstOrDefault(p => p.Index == page)?.Id };
             }
             else if (path.Contains("/bangumi/", StringComparison.OrdinalIgnoreCase) || path.Contains("/cheese/", StringComparison.OrdinalIgnoreCase))
             {
                 var match = EpisodePath().Match(path);
                 if (!match.Success) throw new BiliException("请使用包含 ep、ss 或 md 编号的剧集或课程链接。");
                 var kind = path.Contains("/cheese/") ? MediaKind.Course : MediaKind.Bangumi;
-                var prefix = match.Groups[1].Value; var id = match.Groups[2].Value;
+                var prefix = match.Groups[1].Value.ToLowerInvariant(); var id = match.Groups[2].Value;
                 if (prefix == "md")
                 {
                     var media = await ApiAsync("https://api.bilibili.com/pgc/review/user?media_id=" + id, ct);
@@ -105,11 +105,13 @@ public sealed partial class BiliClient : IMediaService, IDisposable
                         e.Str("cover", cover), kind, e.Num("aid"), e.Str("bvid"), e.Num("cid"), ep, i + 1,
                         $"https://www.bilibili.com/{(kind == MediaKind.Course ? "cheese" : "bangumi")}/play/ep{ep}");
                 }).ToArray());
+                if (prefix == "ep") catalog = catalog with { TargetItemId = catalog.Items.FirstOrDefault(e => e.EpisodeId.ToString() == id)?.Id };
             }
             else if (uri.Host.StartsWith("live."))
                 throw new BiliException("这是直播间链接。请提供已发布回放的视频链接；首版不录制正在直播的内容。");
             else throw new BiliException("暂不识别此链接。请提供视频、番剧分集或课程播放链接。");
-            var items = catalog.Items.Where(i => seen.Add(i.Id)).ToArray();
+            // Retain each explicitly linked target even when another link already exposed its catalog.
+            var items = catalog.Items.Where(i => seen.Add(i.Id) || i.Id == catalog.TargetItemId).ToArray();
             if (items.Length > 0) catalogs.Add(catalog with { Items = items });
         }
         if (catalogs.Count == 0) throw new BiliException("没有找到可下载条目。");
@@ -124,6 +126,11 @@ public sealed partial class BiliClient : IMediaService, IDisposable
             if (!uri.Host.Equals("b23.tv", StringComparison.OrdinalIgnoreCase)) return uri;
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
             using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            if (response.StatusCode is HttpStatusCode.PreconditionFailed or HttpStatusCode.Unauthorized) {
+                var kind = response.StatusCode == HttpStatusCode.PreconditionFailed ? BiliErrorKind.RequestRestricted : BiliErrorKind.LoginRequired;
+                if (kind == BiliErrorKind.LoginRequired) SessionState = SessionState.Expired;
+                throw new BiliException(AuthRecovery.Message(kind, SessionState), kind, (int)response.StatusCode);
+            }
             if ((int)response.StatusCode is >= 300 and < 400 && response.Headers.Location is { } location)
                 uri = location.IsAbsoluteUri ? location : new Uri(uri, location);
             else throw new BiliException("短链接未能跳转，请使用原始视频链接。");

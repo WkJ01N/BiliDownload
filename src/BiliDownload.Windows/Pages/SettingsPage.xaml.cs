@@ -13,6 +13,8 @@ public sealed partial class SettingsPage : Page
         InitializeComponent(); var settings = App.Services.Settings;
         DirectoryBox.Text = settings.DownloadDirectory; FfmpegBox.Text = settings.FfmpegPath;
         DetectSwitch.IsOn = settings.DetectOnActivate; MonitorSwitch.IsOn = settings.MonitorClipboard; ThemeBox.SelectedValue = settings.Theme;
+        AutoDownloadSwitch.IsOn = settings.AutoDownloadOnNotificationClick; ExpandRelatedSwitch.IsOn = settings.ExpandRelatedItems;
+        App.Services.Notifications.RefreshStatus(); NotificationStatus.Text = App.Services.Notifications.Status;
         ComponentChoice.ItemsSource = App.Services.ComponentPackages; ComponentChoice.SelectedIndex = 0; RefreshComponents();
         Unloaded += (_, _) => componentDownload?.Cancel();
         Loaded += async (_, _) => await RefreshAccountAsync();
@@ -117,7 +119,9 @@ public sealed partial class SettingsPage : Page
         {
             if (!Path.IsPathFullyQualified(DirectoryBox.Text) || string.IsNullOrWhiteSpace(FfmpegBox.Text)) throw new BiliException("请填写绝对保存路径及 FFmpeg 程序路径。");
             Directory.CreateDirectory(DirectoryBox.Text);
-            App.Services.SaveSettings(new(DirectoryBox.Text.Trim(), FfmpegBox.Text.Trim(), DetectSwitch.IsOn, MonitorSwitch.IsOn, ThemeBox.SelectedValue as string ?? "Default"));
+            App.Services.SaveSettings(App.Services.Settings with { DownloadDirectory = DirectoryBox.Text.Trim(), FfmpegPath = FfmpegBox.Text.Trim(),
+                DetectOnActivate = DetectSwitch.IsOn, MonitorClipboard = MonitorSwitch.IsOn, Theme = ThemeBox.SelectedValue as string ?? "Default",
+                AutoDownloadOnNotificationClick = AutoDownloadSwitch.IsOn, ExpandRelatedItems = ExpandRelatedSwitch.IsOn });
             App.Main.ApplyTheme(); Show("设置已保存，新任务将使用新的保存目录。", InfoBarSeverity.Success);
         }
         catch (Exception ex) { Show(ex is BiliException ? ex.Message : "设置保存失败，请检查目录是否可写。", InfoBarSeverity.Error); }

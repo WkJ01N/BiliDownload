@@ -4,30 +4,32 @@ $testRoot = Join-Path $projectRoot ('.build/installer-validation/' + [Guid]::New
 $installDirectory = Join-Path $testRoot '中文路径 with spaces'
 New-Item -ItemType Directory -Force $testRoot | Out-Null
 $compiler = & (Join-Path $PSScriptRoot 'install-inno.ps1')
-$package = Join-Path $projectRoot 'artifacts/windows-0.1.2'
+$package = Join-Path $projectRoot 'artifacts/windows-0.1.3'
+$helper = Join-Path $projectRoot '.build/installer-helper/PrepareDirectory.exe'
 $full = & (Join-Path $PSScriptRoot 'get-component.ps1') -Id ffmpeg-full
-& $compiler /Q "/DPackageDir=$package" "/DFullFfmpegDir=$full" "/DOutputDir=$testRoot" /DApplicationId=BiliDownload.WkJ01N.QA /DTestMode=1 (Join-Path $projectRoot 'packaging/windows.iss')
+& $compiler /Q "/DPackageDir=$package" "/DFullFfmpegDir=$full" "/DDirectoryHelper=$helper" "/DOutputDir=$testRoot" /DApplicationId=BiliDownload.WkJ01N.QA /DTestMode=1 (Join-Path $projectRoot 'packaging/windows.iss')
 if ($LASTEXITCODE -ne 0) { throw 'QA installer compilation failed.' }
-$installer = Join-Path $testRoot 'BiliDownload-0.1.2-windows-x64-setup.exe'
+$installer = Join-Path $testRoot 'BiliDownload-0.1.3-windows-x64-setup.exe'
 function Install-QA([string]$type = 'recommended') {
     $process = Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/TYPE=$type","/DIR=`"$installDirectory`"") -WindowStyle Hidden -Wait -PassThru
     if ($process.ExitCode -ne 0) { throw 'QA installation failed.' }
 }
-$oldPackage = Join-Path $projectRoot 'artifacts/windows-0.1.1'
+$oldPackage = Join-Path $projectRoot 'artifacts/windows-0.1.2'
 if (Test-Path -LiteralPath (Join-Path $oldPackage 'BiliDownload.exe')) {
     $oldScript = Join-Path $testRoot 'old-windows.iss'
-    git -C $projectRoot show a9f8fd4:packaging/windows.iss | Set-Content -LiteralPath $oldScript -Encoding utf8
+    git -C $projectRoot show db00b51:packaging/windows.iss | Set-Content -LiteralPath $oldScript -Encoding utf8
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging/windows-obsolete-0.1.1.iss') -Destination $testRoot
     if ($LASTEXITCODE -ne 0) { throw 'Could not read prior installer configuration.' }
-    & $compiler /Q "/DPackageDir=$oldPackage" "/DOutputDir=$testRoot" /DApplicationId=BiliDownload.WkJ01N.QA /DTestMode=1 $oldScript
+    & $compiler /Q "/DPackageDir=$oldPackage" "/DFullFfmpegDir=$full" "/DOutputDir=$testRoot" /DApplicationId=BiliDownload.WkJ01N.QA /DTestMode=1 $oldScript
     if ($LASTEXITCODE -ne 0) { throw 'Prior installer compilation failed.' }
-    $prior = Join-Path $testRoot 'BiliDownload-0.1.1-windows-x64-setup.exe'
+    $prior = Join-Path $testRoot 'BiliDownload-0.1.2-windows-x64-setup.exe'
     $process = Start-Process -FilePath $prior -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=`"$installDirectory`"") -WindowStyle Hidden -Wait -PassThru
     if ($process.ExitCode -ne 0) { throw 'Prior version installation failed.' }
     Install-QA
     foreach($obsolete in @('onnxruntime.dll','DirectML.dll','Microsoft.Windows.Widgets.dll')) {
         if (Test-Path -LiteralPath (Join-Path $installDirectory "app/$obsolete")) { throw "Obsolete SDK component retained: $obsolete" }
     }
-    Write-Output 'PASS 0.1.1 to 0.1.2 upgrade removes obsolete SDK components'
+    Write-Output 'PASS 0.1.2 to 0.1.3 upgrade preserves the previous directory'
 } else { Install-QA; Write-Output 'SKIP previous-version upgrade: prior local payload not present' }
 $ffmpeg = Join-Path $installDirectory 'app/tools/ffmpeg.exe'
 if ((Get-Item -LiteralPath $ffmpeg).Length -gt 5MB) { throw 'Recommended setup did not select minimal FFmpeg.' }
