@@ -51,7 +51,7 @@ class DownloadEngine(private val context: Context) {
                         val files = mutableListOf<File>()
                         for ((index, part) in parts.withIndex()) {
                             val file = File(directory, Links.safeName(part.key) + ".part")
-                            transfer(part, file) { fraction -> update(progress = (index + fraction) / parts.size * .95f, message = "正在下载 · ${plan.variant.label}") }
+                            transfer(part, file) { fraction -> update(progress = (index + fraction) / parts.size * .95f, message = "正在下载  ${plan.variant.label}") }
                             files += file
                         }
                         videos = files.take(plan.video.size); audio = if(plan.audio != null) files.last() else null

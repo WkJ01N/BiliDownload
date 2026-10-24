@@ -137,7 +137,7 @@ public sealed class DownloadQueue : IAsyncDisposable
                                         if ((DateTime.UtcNow - last).TotalMilliseconds < 700 && fraction < 1) return;
                                         last = DateTime.UtcNow;
                                         UpdateAsync(id, revision, t => t with { Progress = (index + fraction) / parts.Length * 95,
-                                            Message = $"正在下载 · {plan.Variant.Label}" }, false).GetAwaiter().GetResult();
+                                            Message = $"正在下载  {plan.Variant.Label}" }, false).GetAwaiter().GetResult();
                                     }, ct);
                                     if (p < plan.Video.Count) videoFiles.Add(file); else audioFile = file;
                                 }

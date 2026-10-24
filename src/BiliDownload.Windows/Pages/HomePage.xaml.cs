@@ -19,12 +19,12 @@ public sealed partial class HomePage : Page
     public sealed class ResultRow(MediaItem item, string fileName) : System.ComponentModel.INotifyPropertyChanged {
         public MediaItem Item { get; } = item;
         public string FileName { get; } = fileName;
-        private string sizeText = "选择后估算大小";
+        private string sizeText = "";
         public string SizeText { get => sizeText; set { sizeText = value; PropertyChanged?.Invoke(this, new(nameof(SizeText))); } }
         public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
         public string Id => Item.Id;
         public string Title => Item.Title;
-        public string PartTitle => Item.PartTitle;
+        public string PartTitle => Item.PartTitle == Item.Title ? "" : Item.PartTitle;
         public string Cover => Item.Cover;
     }
     private void RefreshNames() {
@@ -77,7 +77,7 @@ public sealed partial class HomePage : Page
         var previousQuality = sameInput ? (QualityBox.SelectedItem as MediaVariant)?.Quality : null;
         Busy.IsActive = true; ParseButton.IsEnabled = Results.IsEnabled = DownloadButton.IsEnabled = false; Notice.IsOpen = false;
         LoginButton.Visibility = RetryButton.Visibility = ComponentButton.Visibility = Visibility.Collapsed; RetryButton.IsEnabled = false;
-        if (!sameInput) { estimates.Clear(); names.Clear(); resolvedItems = []; Results.ItemsSource = null; QualityBox.ItemsSource = null; }
+        if (!sameInput) { ResultTitle.Visibility = ResultActions.Visibility = Results.Visibility = SizeSummary.Visibility = Visibility.Collapsed; estimates.Clear(); names.Clear(); resolvedItems = []; Results.ItemsSource = null; QualityBox.ItemsSource = null; }
         try
         {
             var catalogs = await App.Services.Bili.ResolveAsync(requestInput, ct); ct.ThrowIfCancellationRequested();
@@ -85,10 +85,12 @@ public sealed partial class HomePage : Page
             if (items.Length == 0) throw new BiliException("链接指定的条目已不可用，请重新解析或选择其他内容。");
             if (!sameInput) names.Clear();
             resolvedItems = items;
-            Results.ItemsSource = items.Select(i => new ResultRow(i, FileNaming.Render(i, App.Services.Settings.FileNameTemplate, names.GetValueOrDefault(i.Id)))).ToArray(); ResultTitle.Text = $"找到 {items.Length} 个条目 · 请选择下载内容"; lastInput = requestInput;
+            ResultTitle.Visibility = ResultActions.Visibility = Results.Visibility = Visibility.Visible;
+            Results.ItemsSource = items.Select(i => new ResultRow(i, FileNaming.Render(i, App.Services.Settings.FileNameTemplate, names.GetValueOrDefault(i.Id)))).ToArray(); ResultTitle.Text = $"找到 {items.Length} 个条目"; lastInput = requestInput;
             var targets = catalogs.Where(c => c.TargetItemId != null).Select(c => c.TargetItemId).ToHashSet();
             foreach (var item in items.Where(i => previousIds?.Contains(i.Id) ?? targets.Contains(i.Id))) Results.SelectedItems.Add(Results.Items.Cast<ResultRow>().First(r => r.Id == item.Id));
             if (!fromClipboard && Results.SelectedItems.Count == 0 && previousIds == null) Results.SelectedIndex = 0;
+            ParseButton.Content = "获取画质…";
             var reference = Results.SelectedItems.Cast<ResultRow>().Select(r => r.Item).FirstOrDefault() ?? items[0];
             var variants = await App.Services.Bili.GetVariantsAsync(reference, ct); ct.ThrowIfCancellationRequested();
             if (variants.Count == 0) throw new BiliException("当前没有可用的兼容清晰度。");
@@ -107,7 +109,7 @@ public sealed partial class HomePage : Page
         }
         finally
         {
-            if (ReferenceEquals(parsing, current)) { parsing = null; Busy.IsActive = false; ParseButton.IsEnabled = Results.IsEnabled = RetryButton.IsEnabled = true; Estimate_Changed(this, null!); }
+            if (ReferenceEquals(parsing, current)) { parsing = null; ParseButton.Content = "解析链接"; Busy.IsActive = false; ParseButton.IsEnabled = Results.IsEnabled = RetryButton.IsEnabled = true; Estimate_Changed(this, null!); }
         }
     }
     private async void Login_Click(object sender, RoutedEventArgs e)
@@ -134,7 +136,7 @@ public sealed partial class HomePage : Page
             catch (Exception) { ComponentButton.Visibility = Visibility.Visible; Show("FFmpeg 不可用，请在设置中安装组件或配置工具后，再点击下载。原链接和选择已保留。", InfoBarSeverity.Warning); return; }
             if (App.Main.IsExiting) return;
             await App.Services.Queue.AddAsync(selected, quality.Quality, App.Services.Settings.DownloadDirectory, selected.ToDictionary(i => i.Id, i => FileNaming.Render(i, App.Services.Settings.FileNameTemplate, names.GetValueOrDefault(i.Id))));
-            Show("已加入下载队列。重复的活动或已完成任务会自动跳过。", InfoBarSeverity.Success);
+            Show("已加入下载队列", InfoBarSeverity.Success);
             if (navigate) App.Main.OpenQueue();
         }
         catch (Exception) { Show("任务保存失败，请检查本地目录权限。", InfoBarSeverity.Error); }
@@ -149,8 +151,9 @@ public sealed partial class HomePage : Page
         if (QualityBox?.SelectedItem is not MediaVariant quality || Results == null || SizeSummary == null) return;
         using var request = new CancellationTokenSource(); estimating = request; var ct = request.Token;
         var selected = Results.SelectedItems.Cast<ResultRow>().ToArray();
-        foreach (var row in Results.Items.Cast<ResultRow>().Except(selected)) row.SizeText = "选择后估算大小";
-        SizeSummary.Text = selected.Length == 0 ? "选择条目后显示大小；最终文件可能略有差异。" : "正在估算选中内容的大小…";
+        foreach (var row in Results.Items.Cast<ResultRow>().Except(selected)) row.SizeText = "";
+        SizeSummary.Visibility = selected.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        SizeSummary.Text = selected.Length == 0 ? "" : "正在估算选中内容的大小…";
         long total = 0; var unknown = 0;
         try {
             foreach (var row in selected) {
@@ -158,14 +161,14 @@ public sealed partial class HomePage : Page
                 if (!estimates.TryGetValue(row.Id, out var variants)) {
                     try { variants = await App.Services.Bili.GetVariantsAsync(row.Item, ct); ct.ThrowIfCancellationRequested(); estimates[row.Id] = variants; }
                     catch (OperationCanceledException) { throw; }
-                    catch { row.SizeText = "大小未知，可重试解析"; unknown++; continue; }
+                    catch { row.SizeText = "大小未知"; unknown++; continue; }
                 }
                 ct.ThrowIfCancellationRequested();
                 var actual = variants.Where(v => v.Quality <= quality.Quality).MaxBy(v => v.Quality);
-                row.SizeText = actual == null ? "此画质上限无可用视频" : actual.Label + " · " + MediaSize.Format(actual.EstimatedBytes);
+                row.SizeText = actual == null ? "此画质上限无可用视频" : actual.Label + "  " + MediaSize.Format(actual.EstimatedBytes);
                 if (actual?.EstimatedBytes is > 0) total += actual.EstimatedBytes.Value; else unknown++;
             }
-            SizeSummary.Text = selected.Length == 0 ? "选择条目后显示大小。" : $"选中 {selected.Length} 项：{MediaSize.Format(total)}" + (unknown > 0 ? $"，另有 {unknown} 项大小未知" : "") + "。大小为音视频估算值，最终文件可能略有差异。";
+            SizeSummary.Text = selected.Length == 0 ? "" : $"选中 {selected.Length} 项：{MediaSize.Format(total)}" + (unknown > 0 ? $"，另有 {unknown} 项大小未知" : "");
         } catch (OperationCanceledException) { }
         finally { if (ReferenceEquals(estimating, request)) estimating = null; }
     }

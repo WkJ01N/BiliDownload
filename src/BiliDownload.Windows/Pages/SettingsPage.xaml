@@ -1,26 +1,26 @@
 <Page x:Class="BiliDownload_Windows.Pages.SettingsPage" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
- <ScrollViewer><StackPanel Padding="32,24" Spacing="20" MaxWidth="900" HorizontalAlignment="Stretch">
+ <ScrollViewer><StackPanel Padding="24,20" Spacing="20" MaxWidth="900" HorizontalAlignment="Stretch">
   <TextBlock Text="设置" Style="{StaticResource TitleTextBlockStyle}"/>
-  <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="8" Padding="20"><StackPanel Spacing="12"><TextBlock Text="B 站账号" Style="{StaticResource SubtitleTextBlockStyle}"/><TextBlock x:Name="AccountStatus" Text="未登录 · 可下载游客可访问的内容" TextWrapping="Wrap"/><StackPanel Orientation="Horizontal" Spacing="10"><Button Content="扫码登录" Click="Login_Click"/><Button Content="退出登录" Click="Logout_Click"/></StackPanel><TextBlock Text="登录凭据仅在本机加密保存，退出时删除。可获取的画质和内容以账号权限为准。" Opacity="0.6" TextWrapping="Wrap"/></StackPanel></Border>
+  <Border Background="Transparent" CornerRadius="0" Padding="0"><StackPanel Spacing="12"><TextBlock Text="B 站账号" Style="{StaticResource SubtitleTextBlockStyle}"/><TextBlock x:Name="AccountStatus" Text="未登录" TextWrapping="Wrap"/><StackPanel Orientation="Horizontal" Spacing="10"><Button x:Name="AccountLoginButton" Content="扫码登录" Click="Login_Click"/><Button x:Name="AccountLogoutButton" Visibility="Collapsed" Content="退出登录" Click="Logout_Click"/></StackPanel></StackPanel></Border>
   <TextBox x:Name="DirectoryBox" Header="视频保存目录"/><Button Content="选择保存目录" HorizontalAlignment="Left" Click="Directory_Click"/>
-  <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="8" Padding="20"><StackPanel Spacing="12">
+  <Border Background="Transparent" CornerRadius="0" Padding="0"><StackPanel Spacing="12">
    <TextBlock Text="组件管理" Style="{StaticResource SubtitleTextBlockStyle}"/>
-   <TextBlock Text="核心运行环境为必需组件；FFmpeg 可选，支持精简版与完整版。" Opacity="0.6" TextWrapping="Wrap"/>
+
    <TextBlock x:Name="ComponentStatus" TextWrapping="Wrap"/>
    <ComboBox x:Name="ComponentChoice" Header="下载或切换 FFmpeg" HorizontalAlignment="Stretch" DisplayMemberPath="Name" SelectionChanged="ComponentChoice_Changed"/>
-   <TextBlock x:Name="ComponentSize" TextWrapping="Wrap" Opacity="0.65"/>
+   <TextBlock x:Name="ComponentSize" TextWrapping="Wrap" Foreground="{ThemeResource RadixSecondaryTextBrush}"/>
    <StackPanel Orientation="Horizontal" Spacing="8"><Button x:Name="InstallComponent" Content="下载 / 使用" Click="InstallComponent_Click"/><Button x:Name="CancelComponent" Content="取消下载" IsEnabled="False" Click="CancelComponent_Click"/></StackPanel>
-   <StackPanel Orientation="Horizontal" Spacing="8"><Button x:Name="RemoveComponent" Content="移除下载的组件" Click="RemoveComponent_Click"/><Button x:Name="BundledComponent" Content="恢复默认工具" Click="UseBundled_Click"/></StackPanel>
+   <StackPanel Orientation="Horizontal" Spacing="8"><Button x:Name="RemoveComponent" Content="移除组件" Click="RemoveComponent_Click"/><Button x:Name="BundledComponent" Content="恢复默认工具" Click="UseBundled_Click"/></StackPanel>
    <ProgressBar x:Name="ComponentProgress" Visibility="Collapsed" Maximum="100"/>
    <TextBlock x:Name="ComponentMessage" TextWrapping="Wrap"/>
    <TextBox x:Name="FfmpegBox" Header="FFmpeg 程序路径" PlaceholderText="ffmpeg 或 ffmpeg.exe 的完整路径"/>
-   <TextBlock Text="有效的自定义路径会被保留。未安装 FFmpeg 时仍可解析链接，下载合并前需安装组件或配置已有工具。" Opacity="0.6" TextWrapping="Wrap"/>
+
   </StackPanel></Border>
-  <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="8" Padding="20"><StackPanel Spacing="12">
+  <Border Background="Transparent" CornerRadius="0" Padding="0"><StackPanel Spacing="12">
    <TextBlock Text="文件命名" Style="{StaticResource SubtitleTextBlockStyle}"/>
    <TextBox x:Name="NamingTemplate" Header="默认文件名模板" TextChanged="Naming_Changed"/>
-   <TextBlock Text="变量：name 默认名称；title 视频标题；part 分项标题；index 序号；bvid BV号；id 条目编号。扩展名 .mp4 自动添加。" TextWrapping="Wrap"/>
-   <ItemsControl x:Name="NamingVariables"><ItemsControl.ItemTemplate><DataTemplate><Button Content="{Binding}" Click="InsertVariable_Click" Margin="0,2"/></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+
+   <Expander Header="命名变量" HorizontalAlignment="Stretch"><ItemsControl x:Name="NamingVariables"><ItemsControl.ItemTemplate><DataTemplate><Button Content="{Binding Label}" Tag="{Binding Token}" Click="InsertVariable_Click" Margin="0,2"/></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></Expander>
    <TextBlock x:Name="NamingPreview" TextWrapping="Wrap"/>
    <Button Content="恢复默认命名" Click="ResetNaming_Click"/>
   </StackPanel></Border>
@@ -28,14 +28,14 @@
   <ToggleSwitch x:Name="MonitorSwitch" Header="程序运行时监听剪贴板" OffContent="关闭" OnContent="开启"/>
   <ToggleSwitch x:Name="AutoDownloadSwitch" AutomationProperties.AutomationId="AutoDownloadSwitch" Header="点击通知后自动下载" OffContent="先解析，确认后下载" OnContent="下载链接指定的单项"/>
   <ToggleSwitch x:Name="ExpandRelatedSwitch" AutomationProperties.AutomationId="ExpandRelatedSwitch" Header="展开其他分 P／集供选择" OffContent="仅处理链接指定条目" OnContent="展示完整列表，勾选后下载"/>
-  <TextBlock Text="后台识别链接时发送系统通知。展开其他分 P／集时始终先确认选择。关闭窗口时可选择最小化到托盘或退出；退出后停止监听。" Opacity="0.6" TextWrapping="Wrap"/>
+
   <TextBlock x:Name="NotificationStatus" TextWrapping="Wrap"/>
   <HyperlinkButton Content="打开 Windows 通知设置" NavigateUri="ms-settings:notifications" Padding="0,8" HorizontalAlignment="Left"/>
   <ComboBox x:Name="CloseBehaviorBox" Header="关闭窗口时" SelectedValuePath="Tag" HorizontalAlignment="Left"><ComboBoxItem Content="每次询问" Tag="Ask"/><ComboBoxItem Content="最小化到托盘" Tag="Tray"/><ComboBoxItem Content="退出应用" Tag="Exit"/></ComboBox>
   <ComboBox x:Name="ThemeBox" Header="外观" SelectedValuePath="Tag"><ComboBoxItem Content="跟随系统" Tag="Default"/><ComboBoxItem Content="浅色" Tag="Light"/><ComboBoxItem Content="深色" Tag="Dark"/></ComboBox>
   <Button Content="保存设置" Style="{StaticResource AccentButtonStyle}" Click="Save_Click"/>
   <InfoBar x:Name="Notice" IsOpen="False"/>
-  <TextBlock Text="BiliDownload · Windows 预览版 0.1.5" Opacity="0.6"/>
-  <HyperlinkButton Content="GitHub 仓库 · WkJ01N/BiliDownload" NavigateUri="https://github.com/WkJ01N/BiliDownload" Padding="0,8" HorizontalAlignment="Left"/>
+  <TextBlock Text="BiliDownload  Windows 预览版 0.1.6" Foreground="{ThemeResource RadixSecondaryTextBrush}"/>
+  <HyperlinkButton Content="GitHub 仓库" NavigateUri="https://github.com/WkJ01N/BiliDownload" Padding="0,8" HorizontalAlignment="Left"/>
  </StackPanel></ScrollViewer>
 </Page>

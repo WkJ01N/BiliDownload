@@ -8,10 +8,12 @@ namespace BiliDownload_Windows.Pages;
 public sealed partial class SettingsPage : Page
 {
     private CancellationTokenSource? componentDownload;
+    public sealed record NamingVariable(string Label, string Token);
     public SettingsPage()
     {
         InitializeComponent(); var settings = App.Services.Settings;
-        NamingVariables.ItemsSource = FileNaming.Variables.Select(v => "{" + v + "}"); NamingTemplate.Text = settings.FileNameTemplate; CloseBehaviorBox.SelectedValue = settings.CloseBehavior;
+        var labels = new[] { "默认名称", "标题", "分项标题", "序号", "BV号", "编号" };
+        NamingVariables.ItemsSource = FileNaming.Variables.Select((v, i) => new NamingVariable(labels[i], "{" + v + "}")); NamingTemplate.Text = settings.FileNameTemplate; CloseBehaviorBox.SelectedValue = settings.CloseBehavior;
         DirectoryBox.Text = settings.DownloadDirectory; FfmpegBox.Text = settings.FfmpegPath;
         DetectSwitch.IsOn = settings.DetectOnActivate; MonitorSwitch.IsOn = settings.MonitorClipboard; ThemeBox.SelectedValue = settings.Theme;
         AutoDownloadSwitch.IsOn = settings.AutoDownloadOnNotificationClick; ExpandRelatedSwitch.IsOn = settings.ExpandRelatedItems;
@@ -24,14 +26,15 @@ public sealed partial class SettingsPage : Page
     private void RefreshComponents()
     {
         var resolved = App.Services.ResolveFfmpeg();
-        ComponentStatus.Text = Path.IsPathFullyQualified(resolved) && File.Exists(resolved) ? "当前工具：" + resolved : "当前配置：" + resolved + "（将从系统 PATH 查找）";
+        ComponentStatus.Text = Path.IsPathFullyQualified(resolved) ? File.Exists(resolved) ? "FFmpeg 已就绪" : "未找到 FFmpeg" : "使用系统 FFmpeg";
         var package = ComponentChoice.SelectedItem as ComponentPackage;
+        if (package != null) InstallComponent.Content = App.Services.Components.InstalledPath(package) != null ? "使用组件" : "下载组件";
         RemoveComponent.IsEnabled = componentDownload == null && package != null && App.Services.Components.InstalledPath(package) != null;
     }
     private void ComponentChoice_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (ComponentChoice.SelectedItem is not ComponentPackage package) return;
-        ComponentSize.Text = $"下载约 {package.DownloadBytes / 1048576.0:F1} MiB · 安装约 {package.InstalledBytes / 1048576.0:F1} MiB（含许可及源码） · {package.Version}";
+        ComponentSize.Text = $"下载约 {package.DownloadBytes / 1048576.0:F1} MiB  安装约 {package.InstalledBytes / 1048576.0:F1} MiB";
         RefreshComponents();
     }
     private bool QueueBusy() => App.Services.Queue.Snapshot().Any(t => t.State is DownloadState.Queued or DownloadState.Downloading or DownloadState.Merging);
@@ -85,7 +88,7 @@ public sealed partial class SettingsPage : Page
     }
     private async Task RefreshAccountAsync()
     {
-        try { var data = await App.Services.Bili.ApiAsync("https://api.bilibili.com/x/web-interface/nav"); AccountStatus.Text = data.Num("isLogin") != 0 ? $"已登录 · {data.Str("uname")}" : "未登录 · 可下载游客可访问的内容"; }
+        try { var data = await App.Services.Bili.ApiAsync("https://api.bilibili.com/x/web-interface/nav"); var loggedIn = data.Num("isLogin") != 0; AccountStatus.Text = loggedIn ? data.Str("uname") : "未登录"; AccountLoginButton.Visibility = loggedIn ? Visibility.Collapsed : Visibility.Visible; AccountLogoutButton.Visibility = loggedIn ? Visibility.Visible : Visibility.Collapsed; }
         catch (BiliException ex) { AccountStatus.Text = ex.Kind == BiliErrorKind.RequestRestricted ? "请求受限，暂时无法验证登录状态" : "未登录或登录已过期"; }
         catch (Exception) { AccountStatus.Text = "暂时无法验证登录状态，请检查网络"; }
     }
@@ -125,7 +128,7 @@ public sealed partial class SettingsPage : Page
             App.Services.SaveSettings(App.Services.Settings with { DownloadDirectory = DirectoryBox.Text.Trim(), FfmpegPath = FfmpegBox.Text.Trim(),
                 DetectOnActivate = DetectSwitch.IsOn, MonitorClipboard = MonitorSwitch.IsOn, Theme = ThemeBox.SelectedValue as string ?? "Default",
                 AutoDownloadOnNotificationClick = AutoDownloadSwitch.IsOn, ExpandRelatedItems = ExpandRelatedSwitch.IsOn, FileNameTemplate = NamingTemplate.Text, CloseBehavior = CloseBehaviorBox.SelectedValue as string ?? "Ask" });
-            App.Main.ApplyTheme(); Show("设置已保存，新任务将使用新的保存目录。", InfoBarSeverity.Success);
+            RefreshComponents(); App.Main.ApplyTheme(); Show("设置已保存", InfoBarSeverity.Success);
         }
         catch (Exception ex) { Show(ex is BiliException ? ex.Message : "设置保存失败，请检查目录是否可写。", InfoBarSeverity.Error); }
     }
@@ -136,7 +139,7 @@ public sealed partial class SettingsPage : Page
     }
     private void InsertVariable_Click(object sender, RoutedEventArgs e) {
         var start = NamingTemplate.SelectionStart;
-        NamingTemplate.Text = NamingTemplate.Text.Insert(start, (string)((Button)sender).Content);
+        NamingTemplate.Text = NamingTemplate.Text.Insert(start, (string)((Button)sender).Tag);
     }
     private void ResetNaming_Click(object sender, RoutedEventArgs e) => NamingTemplate.Text = FileNaming.DefaultTemplate;
     private void Show(string text, InfoBarSeverity severity) { Notice.Message = text; Notice.Severity = severity; Notice.IsOpen = true; }

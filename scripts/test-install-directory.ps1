@@ -1,7 +1,7 @@
 param([string]$PackageDirectory)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-if (-not $PackageDirectory) { $PackageDirectory = Join-Path $projectRoot 'artifacts/windows-0.1.5' }
+if (-not $PackageDirectory) { $PackageDirectory = Join-Path $projectRoot 'artifacts/windows-0.1.6' }
 $names = (Get-ChildItem -LiteralPath $PackageDirectory | Sort-Object Name).Name -join ','
 if ($names -ne 'app,BiliDownload.exe,docs') { throw "Unexpected publish root: $names" }
 foreach ($relative in @('app/BiliDownload.pri','app/Assets/AppIcon.ico','app/tools/ffmpeg.exe','app/Microsoft.WindowsAppRuntime.Insights.Resource.dll')) {

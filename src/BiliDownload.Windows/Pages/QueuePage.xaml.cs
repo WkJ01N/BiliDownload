@@ -19,7 +19,7 @@ public sealed partial class QueuePage : Page
     public void ShowSmokeState(DownloadState state)
     {
         smoke = true; rows.Clear();
-        var item = new MediaItem("video:smoke", "响应式界面验证：这是一条较长的视频标题，用于检查窄窗口中的文字换行和操作菜单", "第一部分 · 下载后可复制文件、打开文件夹或播放", "", MediaKind.Video, 1, "BV1xx411c7mD", 1, 0, 1, "https://www.bilibili.com/");
+        var item = new MediaItem("video:smoke", "响应式界面验证：这是一条较长的视频标题，用于检查窄窗口中的文字换行和操作菜单", "第一部分  下载后可复制文件、打开文件夹或播放", "", MediaKind.Video, 1, "BV1xx411c7mD", 1, 0, 1, "https://www.bilibili.com/");
         rows.Add(new(new(Guid.NewGuid(), item, 80, "", state, state == DownloadState.Completed ? 100 : 42, state == DownloadState.Failed ? "请求受限，可登录或稍后重试" : state.ToString(), FailureKind: state == DownloadState.Failed ? BiliErrorKind.RequestRestricted : null)));
         Empty.Visibility = Visibility.Collapsed;
     }

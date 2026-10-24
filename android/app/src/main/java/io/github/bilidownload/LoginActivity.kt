@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.*
 
@@ -30,8 +31,9 @@ class LoginActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
-                var message by remember { mutableStateOf("在 B 站页面完成登录后，点击“完成登录”。") }
+            val theme = getSharedPreferences("settings", MODE_PRIVATE).getString("theme", "Default")
+            BiliTheme(theme == "Dark" || theme == "Default" && isSystemInDarkTheme()) {
+                var message by remember { mutableStateOf("") }
                 var verifying by remember { mutableStateOf(false) }
                 val scope = rememberCoroutineScope()
                 Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
@@ -44,7 +46,7 @@ class LoginActivity : ComponentActivity() {
                                 if(!cookie.contains("SESSDATA=")) throw BiliException("还没有获取到登录信息，请先完成网页登录。")
                                 val nav = BiliApplication.api.api("https://api.bilibili.com/x/web-interface/nav", cookie)
                                 if(!nav.optBoolean("isLogin")) throw BiliException("登录验证未通过，请重试。")
-                                BiliApplication.session.save(cookie)
+                                BiliApplication.session.save(cookie, nav.optString("uname"))
                                 BiliApplication.session.state = SessionState.Authenticated
                                 setResult(RESULT_OK)
                                 CookieManager.getInstance().removeAllCookies { finish() }
@@ -53,7 +55,7 @@ class LoginActivity : ComponentActivity() {
                             finally { verifying = false }
                         } }) { Text("完成登录") }
                     }
-                    Text(message, Modifier.padding(12.dp))
+                    if(message.isNotEmpty()) Text(message, Modifier.padding(12.dp))
                     AndroidView(factory = { context -> WebView(context).apply {
                         web = this; settings.javaScriptEnabled = true; settings.domStorageEnabled = true
                         settings.allowFileAccess = false; settings.allowContentAccess = false

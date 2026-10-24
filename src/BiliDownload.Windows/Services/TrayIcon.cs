@@ -16,7 +16,7 @@ public sealed class TrayIcon : IDisposable
         this.open = open; this.exit = exit; callback = WindowProc;
         data = new Data { Size = (uint)Marshal.SizeOf<Data>(), Window = window, Id = 1, Flags = 7, Message = Callback,
             Icon = LoadImage(0, Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"), 1, 16, 16, 0x10),
-            Tip = "BiliDownload · 双击打开，右键退出", Info = "", InfoTitle = "" };
+            Tip = "BiliDownload  双击打开，右键退出", Info = "", InfoTitle = "" };
         SetWindowSubclass(window, callback, 2, 0); IsAvailable = ShellNotifyIcon(0, ref data);
     }
     private nint WindowProc(nint hwnd, uint message, nuint wp, nint lp, nuint id, nuint reference)

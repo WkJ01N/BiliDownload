@@ -28,6 +28,9 @@ public sealed partial class MainWindow : Window
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1180, 820));
         ApplyTheme();
+        Root.ActualThemeChanged += (_, _) => ApplyTitleBarColors();
+        Navigation.DisplayModeChanged += (_, _) => AdjustNavigationLayout();
+        Root.Loaded += (_, _) => AdjustNavigationLayout();
         if (ContentFrame.Content == null) ContentFrame.Navigate(typeof(HomePage));
         tray = new(WinRT.Interop.WindowNative.GetWindowHandle(this), RestoreWindow, () => _ = RequestExitAsync());
         lifetime = new(WinRT.Interop.WindowNative.GetWindowHandle(this), () => systemClosing = true,
@@ -42,7 +45,7 @@ public sealed partial class MainWindow : Window
                 var preference = App.Services.Settings.CloseBehavior;
                 if (preference == "Exit") { await RequestExitAsync(); return; }
                 if (preference == "Tray" && tray?.IsAvailable == true) { AppWindow.Hide(); return; }
-                var remember = new CheckBox { Content = "记住我的选择（可在设置中修改）" };
+                var remember = new CheckBox { Content = "记住我的选择" };
                 Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(remember, "RememberCloseChoice");
                 var panel = new StackPanel { Spacing = 12 };
                 panel.Children.Add(new TextBlock { Text = "最小化到托盘后，下载会继续运行。退出应用将暂停未完成任务，下次可继续。", TextWrapping = TextWrapping.Wrap });
@@ -72,7 +75,23 @@ public sealed partial class MainWindow : Window
         Closed += (_, _) => { watcher?.Dispose(); tray?.Dispose(); lifetime?.Dispose(); };
         BehaviorNotice.IsOpen = App.Services.ClipboardMigrationNotice;
     }
-    public void ApplyTheme() => Root.RequestedTheme = App.Services.Settings.Theme switch { "Light" => ElementTheme.Light, "Dark" => ElementTheme.Dark, _ => ElementTheme.Default };
+    private void AdjustNavigationLayout() => ContentFrame.Margin = new Thickness(0, Navigation.DisplayMode == NavigationViewDisplayMode.Minimal ? 40 : 0, 0, 0);
+    public void ApplyTheme() {
+        Root.RequestedTheme = App.Services.Settings.Theme switch { "Light" => ElementTheme.Light, "Dark" => ElementTheme.Dark, _ => ElementTheme.Default };
+        ApplyTitleBarColors();
+    }
+    private void ApplyTitleBarColors() {
+        var dictionary = Application.Current.Resources.MergedDictionaries.First(d => d.Source?.OriginalString.EndsWith("RadixTheme.xaml") == true);
+        var theme = (ResourceDictionary)dictionary.ThemeDictionaries[Root.ActualTheme == ElementTheme.Light ? "Light" : "Default"];
+        Windows.UI.Color Color(string key) => ((Microsoft.UI.Xaml.Media.SolidColorBrush)theme[key]).Color;
+        var bar = AppWindow.TitleBar;
+        bar.ButtonForegroundColor = Color("TextFillColorPrimaryBrush");
+        bar.ButtonInactiveForegroundColor = Color("TextFillColorSecondaryBrush");
+        bar.ButtonBackgroundColor = bar.ButtonInactiveBackgroundColor = Color("ApplicationPageBackgroundThemeBrush");
+        bar.ButtonHoverBackgroundColor = Color("ControlFillColorSecondaryBrush");
+        bar.ButtonPressedBackgroundColor = Color("ControlFillColorTertiaryBrush");
+        bar.ButtonHoverForegroundColor = bar.ButtonPressedForegroundColor = Color("TextFillColorPrimaryBrush");
+    }
     public void ExitApplication() => _ = RequestExitAsync();
     public async Task RequestExitAsync()
     {
@@ -130,8 +149,9 @@ public sealed partial class MainWindow : Window
     {
         App.Services.SaveSettings(App.Services.Settings with { MonitorClipboard = false }); BehaviorNotice.IsOpen = false;
     }
-    public void ConfigureSmoke(int width, string page, string state)
+    public void ConfigureSmoke(int width, string page, string state, string theme = "Default")
     {
+        Root.RequestedTheme = theme switch { "Light" => ElementTheme.Light, "Dark" => ElementTheme.Dark, _ => ElementTheme.Default };
         var scale = Root.XamlRoot?.RasterizationScale ?? 1.5;
         AppWindow.Resize(new Windows.Graphics.SizeInt32((int)(width * scale), (int)(850 * scale)));
         if (page is "queue" or "completed")
@@ -218,7 +238,7 @@ public sealed partial class MainWindow : Window
             if (signature == lastClipboard) return;
             lastClipboard = signature; if (links.Length == 0) return;
             var request = App.Services.ClipboardRequests.Create(links); pendingClipboard = request.Id;
-            ClipboardNotice.Title = "发现 B 站链接"; ClipboardNotice.Message = "打开后可解析并选择下载内容。";
+            ClipboardNotice.Title = "发现 B 站链接"; ClipboardNotice.Message = "";
             ViewClipboardButton.IsEnabled = true; ClipboardNotice.IsOpen = true;
             if (!foreground && App.Services.Settings.MonitorClipboard) App.Services.Notifications.Show(request);
         }

@@ -14,7 +14,7 @@ data class LoginResult(val outcome: LoginOutcome, val message: String? = null)
 class BiliException(message: String, val kind: BiliErrorKind = BiliErrorKind.Unknown, val httpStatus: Int? = null, val apiCode: Int? = null) : Exception(message)
 object AuthRecovery {
     fun loginMessage(result: LoginResult, forTask: Boolean = false): String? = when(result.outcome) {
-        LoginOutcome.Success -> if(forTask) "已登录，原任务已保留。点击该任务的“继续 / 重试”继续。" else "已登录，原链接和选择已保留，可点击“重新解析”继续。"
+        LoginOutcome.Success -> if(forTask) "已登录，请点击“继续 / 重试”。" else "已登录，请重新解析。"
         LoginOutcome.Failed -> result.message ?: "登录失败，请重试。"
         LoginOutcome.Canceled -> null
     }
@@ -40,4 +40,9 @@ object Links {
             .map { "https://www.bilibili.com/video/${it.value}" }.distinct().toList()
     }
     fun safeName(name: String) = name.replace(Regex("[\\p{Cntrl}<>:\"/\\\\|?*]"), "_").trim().trimEnd('.').take(100).ifBlank { "video" }
+}
+
+data class AccountInfo(val state: SessionState, val username: String? = null) {
+    val loggedIn: Boolean get() = state == SessionState.Saved || state == SessionState.Authenticated
+    val label: String get() = if(loggedIn) username?.takeIf { it.isNotBlank() } ?: "已登录" else if(state == SessionState.Expired) "登录已过期" else "未登录"
 }

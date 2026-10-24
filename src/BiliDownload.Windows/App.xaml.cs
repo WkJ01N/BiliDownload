@@ -94,7 +94,7 @@ public partial class App : Application
             timer.Tick += async (_, _) => {
                 timer.Stop();
                 try {
-                    if (arguments.Length >= 4 && int.TryParse(arguments[3], out var width)) Main.ConfigureSmoke(width, arguments.ElementAtOrDefault(4) ?? "home", arguments.ElementAtOrDefault(5) ?? "Completed");
+                    if (arguments.Length >= 4 && int.TryParse(arguments[3], out var width)) Main.ConfigureSmoke(width, arguments.ElementAtOrDefault(4) ?? "home", arguments.ElementAtOrDefault(5) ?? "Completed", arguments.ElementAtOrDefault(6) ?? "Default");
                     await Task.Delay(500);
                     var detail = await Main.VerifyCommandsAsync(); await Main.CaptureAsync(Path.ChangeExtension(path, ".png")); File.WriteAllText(path, "WinUI window initialized successfully\n" + detail);
                 }

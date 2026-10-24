@@ -1,5 +1,7 @@
 package io.github.bilidownload
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -11,8 +13,23 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 class Session(context: Context) {
+    private val revision = java.util.concurrent.atomic.AtomicLong()
+    val generation: Long get() = revision.get()
     private val prefs = context.getSharedPreferences("session", Context.MODE_PRIVATE)
-    var state: SessionState = if(prefs.contains("value")) SessionState.Saved else SessionState.Guest
+    private val mutableAccount = MutableStateFlow(AccountInfo(if(prefs.contains("value")) SessionState.Saved else SessionState.Guest, prefs.getString("username", null)))
+    val account = mutableAccount.asStateFlow()
+    var state: SessionState
+        get() = mutableAccount.value.state
+        set(value) { mutableAccount.value = mutableAccount.value.copy(state = value, username = if(value == SessionState.Guest || value == SessionState.Expired) null else mutableAccount.value.username) }
+    @Synchronized fun updateProfile(username: String) {
+        if(username.isNotBlank()) { prefs.edit().putString("username", username).apply(); mutableAccount.value = mutableAccount.value.copy(username = username) }
+    }
+    @Synchronized fun acceptNavigation(expected: Long, loggedIn: Boolean, username: String) {
+        if(expected != generation) return
+        state = if(loggedIn) SessionState.Authenticated else if(state == SessionState.Guest) SessionState.Guest else SessionState.Expired
+        if(loggedIn) updateProfile(username)
+    }
+    @Synchronized fun expire(expected: Long) { if(expected == generation) state = SessionState.Expired }
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         (store.getKey("BiliDownloadSession", null) as? SecretKey)?.let { return it }
@@ -28,10 +45,11 @@ class Session(context: Context) {
         cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
         String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8)
     }.getOrDefault("")
-    fun save(cookie: String) {
+    @Synchronized fun save(cookie: String, username: String = "") {
+        revision.incrementAndGet()
         val cipher = Cipher.getInstance("AES/GCM/NoPadding"); cipher.init(Cipher.ENCRYPT_MODE, key())
-        prefs.edit().putString("value", Base64.encodeToString(cipher.iv + cipher.doFinal(cookie.toByteArray()), Base64.NO_WRAP)).commit()
-        state = SessionState.Saved
+        prefs.edit().putString("value", Base64.encodeToString(cipher.iv + cipher.doFinal(cookie.toByteArray()), Base64.NO_WRAP)).putString("username", username.takeIf { it.isNotBlank() }).commit()
+        mutableAccount.value = AccountInfo(SessionState.Saved, username.takeIf { it.isNotBlank() })
     }
-    fun clear() { prefs.edit().clear().commit(); state = SessionState.Guest }
+    @Synchronized fun clear() { revision.incrementAndGet(); prefs.edit().clear().commit(); state = SessionState.Guest }
 }

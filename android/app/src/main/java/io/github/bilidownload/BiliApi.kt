@@ -1,12 +1,17 @@
 package io.github.bilidownload
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -29,6 +34,29 @@ class BiliApi(private val session: Session) {
         }
         fun label(q: Int) = when(q) { 16 -> "360p"; 32 -> "480p"; 64 -> "720p"; 74 -> "720p 60帧"; 80 -> "1080p"; 112 -> "1080p 高码率"; 116 -> "1080p 60帧"; 120 -> "4K"; 127 -> "8K"; else -> "画质 $q" }
     }
+    private val shortLinks = ShortLinks(request = { url -> withContext(Dispatchers.IO) {
+        val generation = session.generation
+        val conn = connection(url).apply { connectTimeout = 4_000; readTimeout = 4_000 }
+        val monitor = CoroutineScope(currentCoroutineContext()).launch(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) { try { awaitCancellation() } finally { conn.disconnect() } }
+        try {
+            val status = conn.responseCode
+            if(status == 401 || status == 412) {
+                val kind = if(status == 401) BiliErrorKind.LoginRequired else BiliErrorKind.RequestRestricted
+                if(status == 401) session.expire(generation)
+                throw BiliException(AuthRecovery.message(kind, session.state), kind, httpStatus = status)
+            }
+            RedirectResponse(status, conn.getHeaderField("Location"))
+        } catch(e: java.net.SocketTimeoutException) { throw BiliException("短链接连接超时，请重试或使用完整链接。") }
+        finally { monitor.cancel(); conn.disconnect() }
+    } })
+    private val signingGate = Mutex()
+    @Volatile private var signingKeys: Pair<JSONObject, Long>? = null
+    private suspend fun signingKeys(): JSONObject = signingGate.withLock {
+        signingKeys?.takeIf { it.second > System.nanoTime() }?.let { return@withLock it.first }
+        val keys = api("https://api.bilibili.com/x/web-interface/nav").getJSONObject("wbi_img")
+        signingKeys = keys to System.nanoTime() + 3_600_000_000_000L
+        keys
+    }
     fun connection(url: String, cookieOverride: String? = null): HttpURLConnection = (URI(url).toURL().openConnection() as HttpURLConnection).apply {
         connectTimeout = 30_000; readTimeout = 60_000; instanceFollowRedirects = false
         setRequestProperty("User-Agent", UA); setRequestProperty("Referer", "https://www.bilibili.com/")
@@ -36,7 +64,8 @@ class BiliApi(private val session: Session) {
         if (host == "bilibili.com" || host.endsWith(".bilibili.com")) (cookieOverride ?: session.get()).takeIf { it.isNotBlank() }?.let { setRequestProperty("Cookie", it) }
     }
     suspend fun api(url: String, cookieOverride: String? = null): JSONObject = withContext(Dispatchers.IO) {
-        val conn = connection(url, cookieOverride)
+        val sessionGeneration = session.generation
+        val conn = connection(url, cookieOverride).apply { connectTimeout = 6_000; readTimeout = 6_000 }
         val cancelMonitor = CoroutineScope(currentCoroutineContext()).launch(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
             try { awaitCancellation() } finally { conn.disconnect() }
         }
@@ -44,18 +73,19 @@ class BiliApi(private val session: Session) {
             if (conn.responseCode != 200) {
                 val status = conn.responseCode
                 val kind = when(status) { 412 -> BiliErrorKind.RequestRestricted; 401 -> BiliErrorKind.LoginRequired; else -> BiliErrorKind.Unknown }
-                if(kind == BiliErrorKind.LoginRequired && cookieOverride == null) session.state = SessionState.Expired
+                if(kind == BiliErrorKind.LoginRequired && cookieOverride == null) session.expire(sessionGeneration)
                 throw BiliException(if(kind == BiliErrorKind.Unknown) "B 站请求失败（HTTP $status），请稍后重试。" else AuthRecovery.message(kind, session.state), kind, httpStatus = status)
             }
             val root = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
             val code = root.optInt("code")
-            if(cookieOverride == null && url.startsWith("https://api.bilibili.com/x/web-interface/nav") && root.optJSONObject("data") != null) {
-                session.state = if(root.getJSONObject("data").optBoolean("isLogin")) SessionState.Authenticated else if(session.state == SessionState.Guest) SessionState.Guest else SessionState.Expired
+            if(code == -403) signingKeys = null
+            if(cookieOverride == null && sessionGeneration == session.generation && url.startsWith("https://api.bilibili.com/x/web-interface/nav") && root.optJSONObject("data") != null) {
+                session.acceptNavigation(sessionGeneration, root.getJSONObject("data").optBoolean("isLogin"), root.getJSONObject("data").optString("uname"))
             }
             if (code != 0 && !(url.contains("/x/web-interface/nav") && code == -101 && root.optJSONObject("data")?.has("wbi_img") == true))
             {
                 val kind = when(code) { -101 -> BiliErrorKind.LoginRequired; -412, -352, -509 -> BiliErrorKind.RequestRestricted; else -> BiliErrorKind.Unknown }
-                if(kind == BiliErrorKind.LoginRequired && cookieOverride == null) session.state = SessionState.Expired
+                if(kind == BiliErrorKind.LoginRequired && cookieOverride == null) session.expire(sessionGeneration)
                 throw BiliException(if(kind == BiliErrorKind.Unknown) "无法获取内容：${root.optString("message", code.toString())}" else AuthRecovery.message(kind, session.state), kind, apiCode = code)
             }
             root.optJSONObject("data") ?: root.optJSONObject("result") ?: throw BiliException("B 站接口响应格式发生变化。")
@@ -66,15 +96,7 @@ class BiliApi(private val session: Session) {
         val items = mutableListOf<MediaItem>()
         for (original in links) {
             var url = original.replaceFirst("http://", "https://")
-            repeat(6) {
-                if (!Links.allowed(url)) throw BiliException("短链接跳转到不支持的网站。")
-                if (URI(url).host == "b23.tv") url = withContext(Dispatchers.IO) {
-                    val conn = connection(url)
-                    try { if (conn.responseCode !in 300..399) throw BiliException("短链接无法跳转。")
-                        URI(url).resolve(conn.getHeaderField("Location") ?: throw BiliException("短链接缺少跳转地址。")).toString()
-                    } finally { conn.disconnect() }
-                }
-            }
+            url = try { shortLinks.expand(url) } catch(e: TimeoutCancellationException) { kotlinx.coroutines.currentCoroutineContext().ensureActive(); throw BiliException("短链接连接超时，请重试或使用完整链接。") }
             if (!Links.allowed(url)) throw BiliException("不支持的跳转地址。")
             val path = URI(url).path
             val video = Regex("/video/(BV[a-zA-Z0-9]{10}|av[0-9]+)").find(path)
@@ -101,7 +123,7 @@ class BiliApi(private val session: Session) {
         val url: String
         if (item.kind == "video") {
             values["bvid"] = item.bvid
-            val wbi = api("https://api.bilibili.com/x/web-interface/nav").getJSONObject("wbi_img")
+            val wbi = signingKeys()
             fun key(name: String) = URI(wbi.getString(name)).path.substringAfterLast('/').substringBefore('.')
             url = "https://api.bilibili.com/x/player/wbi/playurl?" + sign(values, key("img_url"), key("sub_url"), System.currentTimeMillis() / 1000)
         } else {

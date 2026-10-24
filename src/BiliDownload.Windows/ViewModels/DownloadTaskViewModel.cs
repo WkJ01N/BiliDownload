@@ -8,6 +8,7 @@ public sealed class DownloadTaskViewModel(DownloadTaskData data) : INotifyProper
 {
     public DownloadTaskData Data { get; private set; } = data;
     public MediaItem Item => Data.Item;
+    public string PartTitle => Item.PartTitle == Item.Title ? "" : Item.PartTitle;
     public double Progress => Data.Progress;
     public string Message => Data.Message;
     public string FileName => Data.FinalFileName ?? Data.OutputFileName ?? (Data.FilePath != null ? Path.GetFileName(Data.FilePath) : "");

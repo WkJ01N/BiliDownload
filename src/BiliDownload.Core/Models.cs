@@ -5,7 +5,7 @@ public record MediaItem(string Id, string Title, string PartTitle, string Cover,
     long Aid, string Bvid, long Cid, long EpisodeId, int Index, string PageUrl, int PartCount = 1);
 public record MediaCatalog(string Title, IReadOnlyList<MediaItem> Items, string? TargetItemId = null);
 public record MediaVariant(int Quality, string Label, int Height, string Codec, long? EstimatedBytes = null) {
-    public string DisplayLabel => Label + " · " + MediaSize.Format(EstimatedBytes);
+    public string DisplayLabel => Label + "  " + MediaSize.Format(EstimatedBytes);
 }
 public record StreamPart(string Key, string Url, string[] Backups);
 public record DownloadPlan(MediaVariant Variant, IReadOnlyList<StreamPart> Video, StreamPart? Audio);
@@ -32,8 +32,8 @@ public static class AuthRecovery
 {
     public static string? LoginMessage(LoginResult result, bool forTask = false) => result.Outcome switch
     {
-        LoginOutcome.Success when forTask => "已登录，原任务已保留。点击该任务的“继续 / 重试”继续。",
-        LoginOutcome.Success => "已登录，原链接和选择已保留。点击“重新解析”继续。",
+        LoginOutcome.Success when forTask => "已登录，请点击“继续 / 重试”。",
+        LoginOutcome.Success => "已登录，请重新解析。",
         LoginOutcome.Failed => result.Message ?? "登录失败，请重试。",
         _ => null
     };

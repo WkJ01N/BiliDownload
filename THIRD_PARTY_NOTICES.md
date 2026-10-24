@@ -18,3 +18,5 @@ API behavior references used to independently implement parsing and signing:
 https://github.com/bilibili-plugins/bilibili-api-collect/tree/master/docs
 
 These are community observations of Bilibili interfaces, not an official Bilibili SDK. No yt-dlp implementation is bundled.
+
+Radix Colors (MIT), Copyright (c) 2021-2022 Modulz; Copyright (c) 2022-Present WorkOS. Official palette revision dbdb85470547c7d34b9001f48fddb08ded335979. The full license is included in branding/RADIX-LICENSE.txt and Android assets/licenses/RADIX-LICENSE.txt. Source: https://github.com/radix-ui/colors

@@ -10,6 +10,12 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
+      - name: Verify native theme tokens
+        shell: pwsh
+        run: |
+          python ./scripts/build-theme.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git diff --exit-code -- src/BiliDownload.Windows/RadixTheme.xaml android/app/src/main/java/io/github/bilidownload/RadixTheme.kt
       - name: Test download core
         run: dotnet test tests/BiliDownload.Tests/BiliDownload.Tests.csproj
       - name: Enable MSVC

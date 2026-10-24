@@ -4,13 +4,13 @@ Add-Type -AssemblyName PresentationCore,WindowsBase
 $projectRoot = Split-Path -Parent $PSScriptRoot
 [xml]$source = Get-Content -Raw -LiteralPath (Join-Path $projectRoot 'branding/icon.svg')
 $paths = @($source.SelectNodes("//*[local-name()='path']") | ForEach-Object { [Windows.Media.Geometry]::Parse($_.d) })
-$pink = [Windows.Media.BrushConverter]::new().ConvertFromString('#FF6699')
+$pink = [Windows.Media.BrushConverter]::new().ConvertFromString(($source.SelectSingleNode("//*[local-name()='rect']")).fill)
 function Render-Icon([int]$size) {
     $visual = [Windows.Media.DrawingVisual]::new()
     $drawing = $visual.RenderOpen()
     $drawing.PushTransform([Windows.Media.ScaleTransform]::new($size / 512.0,$size / 512.0))
     $drawing.DrawRoundedRectangle($pink,$null,[Windows.Rect]::new(0,0,512,512),100,100)
-    $pen = [Windows.Media.Pen]::new([Windows.Media.Brushes]::White, $(if($size -le 32){20}else{16}))
+    $pen = [Windows.Media.Pen]::new(([Windows.Media.BrushConverter]::new().ConvertFromString('#fcfcfc')), $(if($size -le 32){20}else{16}))
     $pen.StartLineCap = $pen.EndLineCap = [Windows.Media.PenLineCap]::Round
     $pen.LineJoin = [Windows.Media.PenLineJoin]::Round
     foreach ($path in $paths) { $drawing.DrawGeometry($null,$pen,$path) }
@@ -48,7 +48,7 @@ try {
     foreach($bytes in $images) { $writer.Write([byte[]]$bytes) }
 } finally { $writer.Dispose() }
 $vectorPaths = @($source.SelectNodes("//*[local-name()='path']") | ForEach-Object {
-    '    <path android:fillColor="@android:color/transparent" android:strokeColor="#FFFFFF" android:strokeWidth="16" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="' + $_.d + '"/>'
+    '    <path android:fillColor="@android:color/transparent" android:strokeColor="#fcfcfc" android:strokeWidth="16" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="' + $_.d + '"/>'
 }) -join "`n"
 $vector = @"
 <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="512" android:viewportHeight="512">
@@ -68,5 +68,5 @@ $adaptive = @"
 </adaptive-icon>
 "@
 [IO.File]::WriteAllText((Join-Path $directory 'ic_launcher.xml'),$adaptive+"`n")
-[IO.File]::WriteAllText((Join-Path $projectRoot 'android/app/src/main/res/values/branding.xml'),'<resources><color name="brand_pink">#FF6699</color></resources>'+"`n")
+[IO.File]::WriteAllText((Join-Path $projectRoot 'android/app/src/main/res/values/branding.xml'),'<resources><color name="brand_pink">#d6409f</color></resources>'+"`n")
 Write-Output 'Brand assets exported from branding/icon.svg.'

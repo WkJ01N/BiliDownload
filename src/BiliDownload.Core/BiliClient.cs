@@ -21,8 +21,12 @@ public sealed partial class BiliClient : IMediaService, IDisposable
         http.DefaultRequestHeaders.Referrer = new Uri("https://www.bilibili.com/");
     }
 
-    public async Task<JsonElement> ApiAsync(string url, CancellationToken ct = default)
-    {
+    public async Task<JsonElement> ApiAsync(string url, CancellationToken ct = default) {
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct); budget.CancelAfter(TimeSpan.FromSeconds(12));
+        try { return await ApiRequestAsync(url, budget.Token); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw new BiliException("连接超时，请重试。"); }
+    }
+    private async Task<JsonElement> ApiRequestAsync(string url, CancellationToken ct) {
         using var response = await http.GetAsync(url, ct);
         if (!response.IsSuccessStatusCode)
         {
@@ -34,6 +38,7 @@ public sealed partial class BiliClient : IMediaService, IDisposable
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
         var root = doc.RootElement;
         var code = root.Num("code");
+        if (code == -403) signingKeys = null;
         if (url.StartsWith("https://api.bilibili.com/x/web-interface/nav", StringComparison.Ordinal) && root.TryGetProperty("data", out var account) && account.ValueKind == JsonValueKind.Object)
             SessionState = account.Num("isLogin") != 0 ? SessionState.Authenticated : SessionState == SessionState.Guest ? SessionState.Guest : SessionState.Expired;
         var anonymousNav = url.StartsWith("https://api.bilibili.com/x/web-interface/nav", StringComparison.Ordinal) &&
@@ -120,24 +125,52 @@ public sealed partial class BiliClient : IMediaService, IDisposable
         return catalogs;
     }
 
+    private readonly Dictionary<string, (Uri Target, DateTimeOffset Until)> shortCache = new();
+    private readonly SemaphoreSlim shortGate = new(1);
+    private readonly SemaphoreSlim signingGate = new(1);
+    private sealed record SigningCache(JsonElement Keys, DateTimeOffset Until);
+    private SigningCache? signingKeys;
     private async Task<Uri> ExpandAsync(Uri uri, CancellationToken ct)
     {
-        for (var i = 0; i < 6; i++)
-        {
-            if (!LinkParser.IsAllowed(uri)) throw new BiliException("链接跳转到了不支持的网站。");
-            if (!uri.Host.Equals("b23.tv", StringComparison.OrdinalIgnoreCase)) return uri;
-            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-            if (response.StatusCode is HttpStatusCode.PreconditionFailed or HttpStatusCode.Unauthorized) {
-                var kind = response.StatusCode == HttpStatusCode.PreconditionFailed ? BiliErrorKind.RequestRestricted : BiliErrorKind.LoginRequired;
-                if (kind == BiliErrorKind.LoginRequired) SessionState = SessionState.Expired;
-                throw new BiliException(AuthRecovery.Message(kind, SessionState), kind, (int)response.StatusCode);
+        if (!uri.Host.Equals("b23.tv", StringComparison.OrdinalIgnoreCase)) return uri;
+        await shortGate.WaitAsync(ct);
+        try {
+            var original = uri.GetLeftPart(UriPartial.Query);
+            if (shortCache.TryGetValue(original, out var hit) && hit.Until > DateTimeOffset.UtcNow) return hit.Target;
+            using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct); budget.CancelAfter(TimeSpan.FromSeconds(10));
+            var visited = new HashSet<string>();
+            for (var i = 0; i < 6; i++) {
+                if (!LinkParser.IsAllowed(uri)) throw new BiliException("链接跳转到了不支持的网站。");
+                if (!uri.Host.Equals("b23.tv", StringComparison.OrdinalIgnoreCase)) break;
+                if (!visited.Add(uri.AbsoluteUri)) throw new BiliException("短链接发生循环跳转。");
+                if (uri.Scheme == "http") uri = new UriBuilder(uri) { Scheme = "https", Port = -1 }.Uri;
+                using var hop = CancellationTokenSource.CreateLinkedTokenSource(budget.Token); hop.CancelAfter(TimeSpan.FromSeconds(4));
+                using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+                using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, hop.Token);
+                if (response.StatusCode is HttpStatusCode.PreconditionFailed or HttpStatusCode.Unauthorized) {
+                    var kind = response.StatusCode == HttpStatusCode.PreconditionFailed ? BiliErrorKind.RequestRestricted : BiliErrorKind.LoginRequired;
+                    if (kind == BiliErrorKind.LoginRequired) SessionState = SessionState.Expired;
+                    throw new BiliException(AuthRecovery.Message(kind, SessionState), kind, (int)response.StatusCode);
+                }
+                if ((int)response.StatusCode is >= 300 and < 400 && response.Headers.Location is { } location)
+                    uri = location.IsAbsoluteUri ? location : new Uri(uri, location);
+                else throw new BiliException("短链接无法跳转，请使用完整视频链接。");
             }
-            if ((int)response.StatusCode is >= 300 and < 400 && response.Headers.Location is { } location)
-                uri = location.IsAbsoluteUri ? location : new Uri(uri, location);
-            else throw new BiliException("短链接未能跳转，请使用原始视频链接。");
-        }
-        throw new BiliException("短链接跳转次数过多。");
+            if (!LinkParser.IsAllowed(uri)) throw new BiliException("链接跳转到了不支持的网站。");
+            if (uri.Host.Equals("b23.tv", StringComparison.OrdinalIgnoreCase)) throw new BiliException("短链接跳转次数过多。");
+            if (shortCache.Count >= 128) shortCache.Remove(shortCache.Keys.First());
+            shortCache[original] = (uri, DateTimeOffset.UtcNow.AddMinutes(10));
+            return uri;
+        } catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw new BiliException("短链接连接超时，请重试或使用完整链接。"); }
+        finally { shortGate.Release(); }
+    }
+    private async Task<JsonElement> SigningKeysAsync(CancellationToken ct) {
+        await signingGate.WaitAsync(ct);
+        try {
+            if (signingKeys is { } cached && cached.Until > DateTimeOffset.UtcNow) return cached.Keys;
+            var keys = (await ApiAsync("https://api.bilibili.com/x/web-interface/nav", ct)).GetProperty("wbi_img").Clone();
+            signingKeys = new(keys, DateTimeOffset.UtcNow.AddHours(1)); return keys;
+        } finally { signingGate.Release(); }
     }
 
     private async Task<JsonElement> PlayInfoAsync(MediaItem item, int quality, CancellationToken ct)
@@ -148,8 +181,7 @@ public sealed partial class BiliClient : IMediaService, IDisposable
         if (item.Kind == MediaKind.Video)
         {
             parameters["bvid"] = item.Bvid;
-            var nav = await ApiAsync("https://api.bilibili.com/x/web-interface/nav", ct);
-            var wbi = nav.GetProperty("wbi_img");
+            var wbi = await SigningKeysAsync(ct);
             static string Key(string url) => Path.GetFileNameWithoutExtension(new Uri(url).AbsolutePath);
             url = "https://api.bilibili.com/x/player/wbi/playurl?" + WbiSigner.Sign(parameters,
                 Key(wbi.Str("img_url")), Key(wbi.Str("sub_url")), DateTimeOffset.UtcNow.ToUnixTimeSeconds());

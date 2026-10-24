@@ -23,7 +23,7 @@ public interface NotificationCallback {
 }
 '@
 $projectRoot = Split-Path -Parent $PSScriptRoot
-if (-not $PackageDirectory) { $PackageDirectory = Join-Path $projectRoot 'artifacts/windows-0.1.5' }
+if (-not $PackageDirectory) { $PackageDirectory = Join-Path $projectRoot 'artifacts/windows-0.1.6' }
 $testRoot = Join-Path $projectRoot ('.build/background-validation/' + [Guid]::NewGuid().ToString('N'))
 $appDirectory = Join-Path $testRoot 'app'
 New-Item -ItemType Directory -Force $testRoot | Out-Null
@@ -155,7 +155,7 @@ try {
     Write-Output 'PASS automatic download disabled: parse and confirm without queuing'
     Set-Options $true $true
     Minimize-ToTray; $id = Copy-Link 'https://www.bilibili.com/bangumi/play/ep202'
-    Forward 'notification' $id; Wait-Until { Find '找到 2 个条目 · 请选择下载内容' } 'expanded episodes' | Out-Null
+    Forward 'notification' $id; Wait-Until { Find '找到 2 个条目' } 'expanded episodes' | Out-Null
     Start-Sleep -Milliseconds 400
     if ((Tasks).Count -ne 1) { throw 'Expanded selection downloaded without confirmation.' }
     Invoke-Control 'Bangumi:202'

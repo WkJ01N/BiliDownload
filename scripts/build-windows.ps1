@@ -1,7 +1,7 @@
 param([string]$FfmpegDirectory, [switch]$SkipInstaller)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$version = '0.1.5'
+$version = '0.1.6'
 $env:DOTNET_CLI_HOME = Join-Path $projectRoot '.build/dotnet'
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 $env:MSBuildEnableWorkloadResolver = 'false'
