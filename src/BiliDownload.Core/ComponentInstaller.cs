@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 
 namespace BiliDownload.Core;
 
-public record ComponentPackage(string Id, string Name, string Version, string Url, string Sha256, long DownloadBytes, long InstalledBytes);
+public record ComponentPackage(string Id, string Name, string Version, string Url, string Sha256, long DownloadBytes, long InstalledBytes, string EntryPoint = "ffmpeg.exe");
 public record ComponentProgress(string Message, double? Fraction);
 
 /// <summary>Downloads owned optional components separately from account data and application files.</summary>
@@ -14,8 +14,14 @@ public sealed class ComponentInstaller(string directory, HttpClient http)
     public string? InstalledPath(ComponentPackage package)
     {
         var path = Destination(package);
-        return File.Exists(Path.Combine(path, "installed.json")) && File.Exists(Path.Combine(path, "ffmpeg.exe")) ? Path.Combine(path, "ffmpeg.exe") : null;
+        return File.Exists(Path.Combine(path, "installed.json")) && Complete(path, package) ? Path.Combine(path, package.EntryPoint) : null;
     }
+    private static bool Complete(string path, ComponentPackage package) => package.EntryPoint switch
+    {
+        "ffmpeg.exe" => File.Exists(Path.Combine(path, "ffmpeg.exe")),
+        "python.exe" => new[] { "python.exe", "yt-dlp", "qjs.exe" }.All(f => File.Exists(Path.Combine(path, f))),
+        _ => false
+    };
     private string Destination(ComponentPackage package)
     {
         if (!Regex.IsMatch(package.Id, "^[a-z0-9-]+$") || !Regex.IsMatch(package.Sha256, "^[a-fA-F0-9]{64}$"))
@@ -74,7 +80,7 @@ public sealed class ComponentInstaller(string directory, HttpClient http)
                     await input.CopyToAsync(output, ct);
                 }
             }
-            if (!File.Exists(Path.Combine(extracted, "ffmpeg.exe")) || !File.Exists(Path.Combine(extracted, "LICENSE.txt"))) throw new BiliException("组件文件不完整。");
+            if (!Complete(extracted, package) || !File.Exists(Path.Combine(extracted, "LICENSE.txt"))) throw new BiliException("组件文件不完整。");
             await File.WriteAllTextAsync(Path.Combine(extracted, "installed.json"), JsonSerializer.Serialize(package), ct);
             ct.ThrowIfCancellationRequested();
             var destination = Destination(package);
@@ -83,7 +89,7 @@ public sealed class ComponentInstaller(string directory, HttpClient http)
             if (Directory.Exists(destination)) throw new BiliException("组件目录已存在但不完整，请先移除该组件后重试。");
             Directory.Move(extracted, destination);
             progress?.Report(new("组件已安装", 1));
-            return Path.Combine(destination, "ffmpeg.exe");
+            return Path.Combine(destination, package.EntryPoint);
         }
         finally { if (Directory.Exists(staging)) Directory.Delete(staging, true); }
     }

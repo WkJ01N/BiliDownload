@@ -107,6 +107,7 @@ public sealed partial class MainWindow : Window
         (AppWindow.Presenter as Microsoft.UI.Windowing.OverlappedPresenter)?.Restore();
         Activate(); SetForegroundWindow(WinRT.Interop.WindowNative.GetWindowHandle(this));
     }
+    public void OpenYoutubeSettings() { OpenSettings(); (ContentFrame.Content as SettingsPage)?.SelectYoutubeComponent(); }
     public void OpenSettings() { Navigation.SelectedItem = Navigation.SettingsItem; ContentFrame.Navigate(typeof(SettingsPage)); }
     public void OpenQueue()
     {
@@ -238,7 +239,7 @@ public sealed partial class MainWindow : Window
             if (signature == lastClipboard) return;
             lastClipboard = signature; if (links.Length == 0) return;
             var request = App.Services.ClipboardRequests.Create(links); pendingClipboard = request.Id;
-            ClipboardNotice.Title = "发现 B 站链接"; ClipboardNotice.Message = "";
+            ClipboardNotice.Title = "发现视频链接"; ClipboardNotice.Message = "";
             ViewClipboardButton.IsEnabled = true; ClipboardNotice.IsOpen = true;
             if (!foreground && App.Services.Settings.MonitorClipboard) App.Services.Notifications.Show(request);
         }

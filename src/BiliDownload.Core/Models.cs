@@ -2,9 +2,11 @@ namespace BiliDownload.Core;
 
 public enum MediaKind { Video, Bangumi, Course }
 public record MediaItem(string Id, string Title, string PartTitle, string Cover, MediaKind Kind,
-    long Aid, string Bvid, long Cid, long EpisodeId, int Index, string PageUrl, int PartCount = 1);
-public record MediaCatalog(string Title, IReadOnlyList<MediaItem> Items, string? TargetItemId = null);
-public record MediaVariant(int Quality, string Label, int Height, string Codec, long? EstimatedBytes = null) {
+    long Aid, string Bvid, long Cid, long EpisodeId, int Index, string PageUrl, int PartCount = 1,
+    string? YoutubeId = null, string? PlaylistId = null);
+public record MediaCatalog(string Title, IReadOnlyList<MediaItem> Items, string? TargetItemId = null, PlaylistCursor? More = null,
+    IReadOnlyList<MediaVariant>? InitialVariants = null);
+public record MediaVariant(int Quality, string Label, int Height, string Codec, long? EstimatedBytes = null, string? FormatId = null) {
     public string DisplayLabel => Label + "  " + MediaSize.Format(EstimatedBytes);
 }
 public record StreamPart(string Key, string Url, string[] Backups);
@@ -12,11 +14,11 @@ public record DownloadPlan(MediaVariant Variant, IReadOnlyList<StreamPart> Video
 public enum DownloadState { Queued, Downloading, Merging, Paused, Completed, Failed, Canceled }
 public record DownloadTaskData(Guid Id, MediaItem Item, int Quality, string Directory,
     DownloadState State = DownloadState.Queued, double Progress = 0, string Message = "等待下载",
-    string? FilePath = null, DateTimeOffset CreatedAt = default, BiliErrorKind? FailureKind = null, string? OutputFileName = null, string? FinalFileName = null);
+    string? FilePath = null, DateTimeOffset CreatedAt = default, BiliErrorKind? FailureKind = null, string? OutputFileName = null, string? FinalFileName = null, string? FormatId = null);
 public record AppSettings(string DownloadDirectory, string FfmpegPath = "ffmpeg",
     bool DetectOnActivate = false, bool MonitorClipboard = true, string Theme = "Default",
     bool AutoDownloadOnNotificationClick = true, bool ExpandRelatedItems = false, int ClipboardBehaviorVersion = 0, string FileNameTemplate = "{name}", string CloseBehavior = "Ask");
-public enum BiliErrorKind { Unknown, LoginRequired, RequestRestricted }
+public enum BiliErrorKind { Unknown, LoginRequired, RequestRestricted, YoutubeSession, YoutubeComponent }
 public enum SessionState { Guest, Saved, Authenticated, Expired }
 public enum LoginOutcome { Success, Canceled, Failed }
 public record LoginResult(LoginOutcome Outcome, string? Message = null);

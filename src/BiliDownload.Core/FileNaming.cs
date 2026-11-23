@@ -19,11 +19,11 @@ public static class FileNaming
         if (custom != null) return Normalize(custom);
         Validate(template);
         var part = item.PartTitle.Trim();
-        var name = item.PartCount > 1 || item.Kind != MediaKind.Video
+        var name = item.PlaylistId != null ? $"{item.Index:D2} {item.Title}" : item.PartCount > 1 || item.Kind != MediaKind.Video
             ? $"{item.Title} P{item.Index}" + (part.Length == 0 || part == item.Title.Trim() ? "" : " " + part)
             : item.Title;
         var values = new Dictionary<string, string> { ["name"] = name, ["title"] = item.Title,
-            ["part"] = item.PartTitle, ["index"] = item.Index.ToString(), ["bvid"] = item.Bvid, ["id"] = item.Id };
+            ["part"] = item.PartTitle, ["index"] = item.Index.ToString(), ["bvid"] = item.Bvid, ["id"] = item.YoutubeId ?? item.Id };
         return Normalize(Regex.Replace(template, @"\{([^{}]+)\}", m => values[m.Groups[1].Value]));
     }
     public static string Normalize(string value)

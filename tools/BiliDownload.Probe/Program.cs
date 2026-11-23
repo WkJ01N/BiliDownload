@@ -1,6 +1,8 @@
 using BiliDownload.Core;
 using System.Text.Json;
 
+if (args.FirstOrDefault() == "--verify-youtube") return await YoutubeVerification.RunAsync(args);
+
 if (args.FirstOrDefault() == "--verify-components")
 {
     using var http = new HttpClient(new HttpClientHandler { UseCookies = false }) { Timeout = TimeSpan.FromMinutes(15) };
@@ -8,7 +10,7 @@ if (args.FirstOrDefault() == "--verify-components")
     var components = new ComponentInstaller(args[2], http);
     foreach (var package in packages) {
         var path = await components.InstallAsync(package);
-        await MediaDownloader.CheckFfmpegAsync(path, default);
+        if (package.EntryPoint == "ffmpeg.exe") await MediaDownloader.CheckFfmpegAsync(path, default);
         Console.WriteLine("组件下载、SHA-256 校验、安装和启动成功：" + package.Id);
     }
     return 0;

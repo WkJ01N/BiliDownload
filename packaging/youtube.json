@@ -1,0 +1,62 @@
+{
+  "yt-dlp": {
+    "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.26/yt-dlp",
+    "sha256": "e51e69e89489f199530f13d32a4342da3ddb2cf34842f364603a066db05afbf3"
+  },
+  "python-embed.zip": {
+    "url": "https://www.python.org/ftp/python/3.13.13/python-3.13.13-embed-amd64.zip",
+    "sha256": "8766a8775746235e23cf5aee5027ab1060bb981d93110577adcf3508aa0cbd55"
+  },
+  "qjs-windows-x86_64.exe": {
+    "url": "https://github.com/quickjs-ng/quickjs/releases/download/v0.18.0/qjs-windows-x86_64.exe",
+    "sha256": "ff03398d74ea6e6bd3a8e58058f7003225abcac229d7d57775b7aaae812a49c7"
+  },
+  "yt-dlp.tar.gz": {
+    "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.26/yt-dlp.tar.gz",
+    "sha256": "21f942d258d25cc4e60b4982a25c423460f0bebb835f38e6dfd1fcb140087f95"
+  },
+  "yt-dlp-ejs.tar.gz": {
+    "url": "https://codeload.github.com/yt-dlp/ejs/tar.gz/refs/tags/0.8.0",
+    "sha256": "2704dfcac899fcb443d3b80cb8bb6337c5eb98d09ebf0760295d1c58e9461e53"
+  },
+  "quickjs-ng.tar.gz": {
+    "url": "https://codeload.github.com/quickjs-ng/quickjs/tar.gz/refs/tags/v0.18.0",
+    "sha256": "28bcd89aa3683fd2a946537e5ce3f11cc46b5cbf3383c7561aaef3df5ff9f1dd"
+  },
+  "Python-3.13.13.tar.xz": {
+    "url": "https://www.python.org/ftp/python/3.13.13/Python-3.13.13.tar.xz",
+    "sha256": "2ab91ff401783ccca64f75d10c882e957bdfd60e2bf5a72f8421793729b78a71"
+  },
+  "Python-3.12.11.tar.xz": {
+    "url": "https://www.python.org/ftp/python/3.12.11/Python-3.12.11.tar.xz",
+    "sha256": "c30bb24b7f1e9a19b11b55a546434f74e739bb4c271a3e3a80ff4380d49f7adb"
+  },
+  "quickjs-2025-04-26.tar.xz": {
+    "url": "https://bellard.org/quickjs/quickjs-2025-04-26.tar.xz",
+    "sha256": "2f20074c25166ef6f781f381c50d57b502cb85d470d639abccebbef7954c83bf"
+  },
+  "readline-8.3.tar.gz": {
+    "url": "https://ftp.gnu.org/gnu/readline/readline-8.3.tar.gz",
+    "sha256": "fe5383204467828cd495ee8d1d3c037a7eba1389c22bc6a041f627976f9061cc"
+  },
+  "gdbm-1.26.tar.gz": {
+    "url": "https://ftp.gnu.org/gnu/gdbm/gdbm-1.26.tar.gz",
+    "sha256": "6a24504a14de4a744103dcb936be976df6fbe88ccff26065e54c1c47946f4a5e"
+  },
+  "android-runtime-build.md": {
+    "url": "https://raw.githubusercontent.com/yausername/youtubedl-android/0.18.1/BUILD_PYTHON.md",
+    "sha256": "e0f28ea8d06ca4715c31a8be1102f02afcb8b55327c5d32705b880bf36f3a59e"
+  },
+  "android-LICENSE.txt": {
+    "url": "https://raw.githubusercontent.com/yausername/youtubedl-android/0.18.1/LICENSE",
+    "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+  },
+  "android-library-sources.jar": {
+    "url": "https://repo.maven.apache.org/maven2/io/github/junkfood02/youtubedl-android/library/0.18.1/library-0.18.1-sources.jar",
+    "sha256": "26e94f33de0ba802f3507862d509f80d100c1c9065ded7556d16ff51249c4a9a"
+  },
+  "android-common-sources.jar": {
+    "url": "https://repo.maven.apache.org/maven2/io/github/junkfood02/youtubedl-android/common/0.18.1/common-0.18.1-sources.jar",
+    "sha256": "7db17b16e5a66572aa40c8866941ae11f3f49128849beb2dc004dac84ca06a9b"
+  }
+}

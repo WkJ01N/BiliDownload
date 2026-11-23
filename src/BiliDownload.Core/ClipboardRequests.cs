@@ -8,13 +8,14 @@ public static class ClipboardPolicy
         settings with { MonitorClipboard = true, ClipboardBehaviorVersion = 1 };
 
     // Clipboard inspection deliberately does not resolve short URLs or call any API.
-    public static string[] Links(string text) => LinkParser.Extract(text).Where(u =>
+    public static string[] Links(string text) => LinkParser.ExtractSupported(text).Where(u => YoutubeLink.Parse(u) != null ||
         u.Host.Equals("b23.tv", StringComparison.OrdinalIgnoreCase) ||
         u.AbsolutePath.StartsWith("/video/", StringComparison.OrdinalIgnoreCase) ||
         u.AbsolutePath.StartsWith("/bangumi/play/", StringComparison.OrdinalIgnoreCase) ||
         u.AbsolutePath.StartsWith("/bangumi/media/", StringComparison.OrdinalIgnoreCase) ||
         u.AbsolutePath.StartsWith("/cheese/play/", StringComparison.OrdinalIgnoreCase))
         .Select(u => {
+            if (YoutubeLink.Parse(u) is { } youtube) return youtube.Canonical;
             if (u.Host.Equals("b23.tv", StringComparison.OrdinalIgnoreCase)) return u.AbsoluteUri;
             var page = BiliClient.ParseQuery(u).GetValueOrDefault("p");
             return "https://www.bilibili.com" + u.AbsolutePath.TrimEnd('/') + (page == null ? "" : "?p=" + Uri.EscapeDataString(page));

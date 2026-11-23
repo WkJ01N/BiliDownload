@@ -17,6 +17,12 @@ Windows optionally installs LGPL-only FFmpeg under `app/tools/`. The minimal bui
 API behavior references used to independently implement parsing and signing:
 https://github.com/bilibili-plugins/bilibili-api-collect/tree/master/docs
 
-These are community observations of Bilibili interfaces, not an official Bilibili SDK. No yt-dlp implementation is bundled.
+These are community observations of Bilibili interfaces, not an official Bilibili SDK.
+
+## Optional YouTube engine
+
+Windows installs CPython 3.13.13 (PSF), the official yt-dlp 2026.10.26 zipapp (Unlicense) with yt-dlp-ejs 0.8.0, and QuickJS-NG 0.18.0 (MIT). The component includes the upstream licenses. SHA-256 pins and upstream download URLs are in [the engine manifest](packaging/youtube.json).
+
+The separately installed Android YouTube extension uses youtubedl-android 0.18.1, CPython 3.12.11 and QuickJS 2025-04-26. The extension APK is distributed under GPLv3 with its upstream notices. The host app communicates with it using the signature-protected AIDL interface. The release includes `youtube-component-sources.zip` with engine source archives, Android wrapper sources, native runtime build instructions and extension integration code. The release tag contains the complete app and Gradle build configuration. [Android wrapper and build inputs](https://github.com/yausername/youtubedl-android/tree/0.18.1) [yt-dlp](https://github.com/yt-dlp/yt-dlp/tree/2026.10.26) [EJS](https://github.com/yt-dlp/ejs/tree/0.8.0)
 
 Radix Colors (MIT), Copyright (c) 2021-2022 Modulz; Copyright (c) 2022-Present WorkOS. Official palette revision dbdb85470547c7d34b9001f48fddb08ded335979. The full license is included in branding/RADIX-LICENSE.txt and Android assets/licenses/RADIX-LICENSE.txt. Source: https://github.com/radix-ui/colors

@@ -19,7 +19,9 @@ import kotlinx.coroutines.withContext
             runCatching {
                 if(url.isBlank()) return@runCatching null
                 val secure = if(url.startsWith("//")) "https:$url" else url.replaceFirst("http://", "https://")
-                val conn = BiliApplication.api.connection(secure)
+                val uri = java.net.URI(secure)
+                val conn = if (uri.host == "i.ytimg.com") (uri.toURL().openConnection() as java.net.HttpURLConnection).apply { connectTimeout = 6000; readTimeout = 8000; instanceFollowRedirects = false }
+                    else BiliApplication.api.connection(secure)
                 try { conn.inputStream.use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = 2 })?.asImageBitmap() } }
                 finally { conn.disconnect() }
             }.getOrNull()

@@ -19,8 +19,31 @@ public sealed partial class SettingsPage : Page
         AutoDownloadSwitch.IsOn = settings.AutoDownloadOnNotificationClick; ExpandRelatedSwitch.IsOn = settings.ExpandRelatedItems;
         App.Services.Notifications.RefreshStatus(); NotificationStatus.Text = App.Services.Notifications.Status;
         ComponentChoice.ItemsSource = App.Services.ComponentPackages; ComponentChoice.SelectedIndex = 0; RefreshComponents();
+        RefreshYoutubeAccount();
         Unloaded += (_, _) => componentDownload?.Cancel();
         Loaded += async (_, _) => await RefreshAccountAsync();
+    }
+    public void SelectYoutubeComponent() => ComponentChoice.SelectedItem = App.Services.ComponentPackages.FirstOrDefault(p => p.Id == "youtube");
+    private void RefreshYoutubeAccount()
+    {
+        var saved = App.Services.HasYoutubeSession;
+        YoutubeStatus.Text = saved ? "已导入会话" : "未关联账号";
+        YoutubeImport.Content = saved ? "替换 cookies.txt" : "导入 cookies.txt";
+        YoutubeRemove.Visibility = saved ? Visibility.Visible : Visibility.Collapsed;
+    }
+    private async void YoutubeImport_Click(object sender, RoutedEventArgs e)
+    {
+        try {
+            var picker = new FileOpenPicker(); picker.FileTypeFilter.Add(".txt");
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(App.Main));
+            var file = await picker.PickSingleFileAsync(); if (file == null) return;
+            App.Services.ImportYoutubeSession(file.Path); RefreshYoutubeAccount(); Show("会话已导入，可返回重试。", InfoBarSeverity.Success);
+        } catch (Exception ex) { Show(ex is BiliException ? ex.Message : "无法导入会话文件。", InfoBarSeverity.Error); }
+    }
+    private void YoutubeRemove_Click(object sender, RoutedEventArgs e)
+    {
+        try { App.Services.ClearYoutubeSession(); RefreshYoutubeAccount(); }
+        catch (IOException) { Show("无法移除本机会话。", InfoBarSeverity.Error); }
     }
     public void SyncClosePreference() => CloseBehaviorBox.SelectedValue = App.Services.Settings.CloseBehavior;
     private void RefreshComponents()
@@ -28,7 +51,12 @@ public sealed partial class SettingsPage : Page
         var resolved = App.Services.ResolveFfmpeg();
         ComponentStatus.Text = Path.IsPathFullyQualified(resolved) ? File.Exists(resolved) ? "FFmpeg 已就绪" : "未找到 FFmpeg" : "使用系统 FFmpeg";
         var package = ComponentChoice.SelectedItem as ComponentPackage;
-        if (package != null) InstallComponent.Content = App.Services.Components.InstalledPath(package) != null ? "使用组件" : "下载组件";
+        if (package != null) {
+            CheckYoutube.Visibility = package.Id == "youtube" ? Visibility.Visible : Visibility.Collapsed;
+            var installed = App.Services.Components.InstalledPath(package) != null;
+            InstallComponent.Content = installed ? package.Id == "youtube" ? "已安装" : "使用组件" : "下载组件";
+            InstallComponent.IsEnabled = componentDownload == null && !(installed && package.Id == "youtube");
+        }
         RemoveComponent.IsEnabled = componentDownload == null && package != null && App.Services.Components.InstalledPath(package) != null;
     }
     private void ComponentChoice_Changed(object sender, SelectionChangedEventArgs e)
@@ -36,6 +64,18 @@ public sealed partial class SettingsPage : Page
         if (ComponentChoice.SelectedItem is not ComponentPackage package) return;
         ComponentSize.Text = $"下载约 {package.DownloadBytes / 1048576.0:F1} MiB  安装约 {package.InstalledBytes / 1048576.0:F1} MiB";
         RefreshComponents();
+    }
+    private async void CheckYoutube_Click(object sender, RoutedEventArgs e)
+    {
+        if (componentDownload != null) return;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        CheckYoutube.IsEnabled = false;
+        try {
+            bool found = await App.Services.CheckYoutubeUpdateAsync(timeout.Token);
+            ComponentChoice.ItemsSource = App.Services.ComponentPackages; SelectYoutubeComponent();
+            ComponentMessage.Text = found ? "发现新版本，可下载更新。" : "当前已是最新版本。";
+        } catch (Exception) { ComponentMessage.Text = "无法检查更新，请稍后重试。"; }
+        finally { CheckYoutube.IsEnabled = true; }
     }
     private bool QueueBusy() => App.Services.Queue.Snapshot().Any(t => t.State is DownloadState.Queued or DownloadState.Downloading or DownloadState.Merging);
     private void UseFfmpeg(string path)
@@ -57,8 +97,9 @@ public sealed partial class SettingsPage : Page
                 if (p.Fraction != null) ComponentProgress.Value = p.Fraction.Value * 100;
             });
             var path = await App.Services.Components.InstallAsync(package, progress, token);
-            await MediaDownloader.CheckFfmpegAsync(path, token);
-            UseFfmpeg(path); ComponentMessage.Text = "组件已安装并选用。可返回原任务点击重试。";
+            if (package.EntryPoint == "ffmpeg.exe") { await MediaDownloader.CheckFfmpegAsync(path, token); UseFfmpeg(path); }
+            else App.Services.ActivateYoutube(package);
+            ComponentMessage.Text = "组件已安装并选用。可返回原任务点击重试。";
         }
         catch (OperationCanceledException) { ComponentMessage.Text = "下载已取消，原工具配置保留。"; }
         catch (Exception ex) { ComponentMessage.Text = ex is BiliException ? ex.Message : "组件下载或安装失败，请检查网络、磁盘空间后重试。"; }
@@ -76,7 +117,7 @@ public sealed partial class SettingsPage : Page
         if (QueueBusy()) { ComponentMessage.Text = "请先暂停正在运行的下载，再移除组件。"; return; }
         try {
             var installed = App.Services.Components.InstalledPath(package);
-            App.Services.Components.Remove(package);
+            if (package.Id == "youtube") App.Services.RemoveYoutube(package); else App.Services.Components.Remove(package);
             if (installed != null && App.Services.Settings.FfmpegPath == installed) UseFfmpeg("ffmpeg");
             ComponentMessage.Text = "下载的组件已移除，视频及任务记录保留。"; RefreshComponents();
         } catch (Exception) { ComponentMessage.Text = "组件正在使用或目录不可写，暂时无法移除。"; }

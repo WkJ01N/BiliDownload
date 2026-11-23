@@ -2,7 +2,7 @@
   <Grid x:Name="Root" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
     <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
     <Grid x:Name="TitleRegion" Padding="20,0,150,0"><StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center"><Image Source="ms-appx:///Assets/AppIcon.png" Width="24" Height="24"/><TextBlock Text="BiliDownload" FontWeight="SemiBold"/></StackPanel></Grid>
-    <InfoBar x:Name="ClipboardNotice" Grid.Row="1" IsOpen="False" Severity="Informational" Title="发现 B 站链接" Message=""><InfoBar.ActionButton><Button x:Name="ViewClipboardButton" Content="查看链接" Click="ViewClipboard_Click"/></InfoBar.ActionButton></InfoBar>
+    <InfoBar x:Name="ClipboardNotice" Grid.Row="1" IsOpen="False" Severity="Informational" Title="发现视频链接" Message=""><InfoBar.ActionButton><Button x:Name="ViewClipboardButton" Content="查看链接" Click="ViewClipboard_Click"/></InfoBar.ActionButton></InfoBar>
     <InfoBar x:Name="BehaviorNotice" Grid.Row="2" IsOpen="False" Severity="Informational" Title="后台链接提示已启用" Message="可在设置中关闭。"><InfoBar.ActionButton><Button Content="关闭监听" Click="DisableClipboard_Click"/></InfoBar.ActionButton></InfoBar>
     <NavigationView x:Name="Navigation" Grid.Row="3" SelectionChanged="Navigation_SelectionChanged" IsBackButtonVisible="Collapsed" OpenPaneLength="220" PaneDisplayMode="Auto" IsSettingsVisible="True">
       <NavigationView.MenuItems>

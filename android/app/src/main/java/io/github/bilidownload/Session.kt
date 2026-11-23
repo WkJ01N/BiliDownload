@@ -12,10 +12,10 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-class Session(context: Context) {
+class Session(context: Context, private val storageName: String = "session", private val alias: String = "BiliDownloadSession") {
     private val revision = java.util.concurrent.atomic.AtomicLong()
     val generation: Long get() = revision.get()
-    private val prefs = context.getSharedPreferences("session", Context.MODE_PRIVATE)
+    private val prefs = context.getSharedPreferences(storageName, Context.MODE_PRIVATE)
     private val mutableAccount = MutableStateFlow(AccountInfo(if(prefs.contains("value")) SessionState.Saved else SessionState.Guest, prefs.getString("username", null)))
     val account = mutableAccount.asStateFlow()
     var state: SessionState
@@ -32,9 +32,9 @@ class Session(context: Context) {
     @Synchronized fun expire(expected: Long) { if(expected == generation) state = SessionState.Expired }
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        (store.getKey("BiliDownloadSession", null) as? SecretKey)?.let { return it }
+        (store.getKey(alias, null) as? SecretKey)?.let { return it }
         return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply {
-            init(KeyGenParameterSpec.Builder("BiliDownloadSession", KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+            init(KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())
         }.generateKey()
     }

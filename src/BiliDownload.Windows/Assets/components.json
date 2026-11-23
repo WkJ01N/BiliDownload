@@ -16,5 +16,15 @@
     "Sha256": "918794f744cbcbcd77f81a9cf55874cd7831f8d81c34fe942b6f7e8c0118fa1f",
     "DownloadBytes": 74032411,
     "InstalledBytes": 151027060
+  },
+  {
+    "Id": "youtube",
+    "Name": "YouTube 下载组件",
+    "Version": "2026.10.26-1",
+    "Url": "https://github.com/WkJ01N/BiliDownload/releases/download/v0.2.0/youtube-win-x64.zip",
+    "Sha256": "923c30c93e322ce2298fd9227765b98e41d0e8701671ccfab42884e27fcf7a3a",
+    "DownloadBytes": 26192667,
+    "InstalledBytes": 26188679,
+    "EntryPoint": "python.exe"
   }
 ]

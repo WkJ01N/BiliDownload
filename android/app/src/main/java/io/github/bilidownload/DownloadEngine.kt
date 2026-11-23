@@ -29,7 +29,10 @@ class DownloadEngine(private val context: Context) {
     suspend fun pause(id: String, canceled: Boolean = false) {
         running[id]?.cancelAndJoin()
         BiliApplication.store.update(id) { if (it.state == "Completed") it else it.copy(state = if(canceled) "Canceled" else "Paused", message = if(canceled) "已取消" else "已暂停") }
-        if(canceled && BiliApplication.store.get(id)?.state == "Canceled") File(context.cacheDir, "downloads/$id").deleteRecursively()
+        if(canceled && BiliApplication.store.get(id)?.state == "Canceled") {
+            File(context.cacheDir, "downloads/$id").deleteRecursively()
+            if (BiliApplication.store.get(id)?.item?.youtubeId != null) BiliApplication.youtube.clean(id)
+        }
     }
     suspend fun run(id: String, notify: (DownloadEntry) -> Unit) = limit.withPermit {
         locks.getOrPut(id) { Mutex() }.withLock {
@@ -44,7 +47,10 @@ class DownloadEngine(private val context: Context) {
             try {
                 currentCoroutineContext().ensureActive(); update(message = "获取媒体源")
                 var videos = emptyList<File>(); var audio: File? = null
-                for (attempt in 0..2) {
+                if (entry.item.youtubeId != null) {
+                    val tracks = BiliApplication.youtube.fetch(entry, directory) { fraction -> update(progress = fraction * .95f, message = "正在下载 YouTube 视频") }
+                    videos = listOf(tracks.first); audio = tracks.second
+                } else for (attempt in 0..2) {
                     try {
                         val plan = BiliApplication.api.plan(entry.item, entry.quality)
                         val parts = plan.video + listOfNotNull(plan.audio)
@@ -68,6 +74,7 @@ class DownloadEngine(private val context: Context) {
                 BiliApplication.store.update(id) { it.copy(state = "Completed", progress = 1f, message = "下载完成", uri = uri.toString(), finalFileName = runCatching { resolverName(uri) }.getOrNull() ?: filename) }
                 BiliApplication.store.get(id)?.let(notify)
                 directory.deleteRecursively()
+                if (entry.item.youtubeId != null) BiliApplication.youtube.clean(id)
             } catch (e: CancellationException) { update("Paused", message = "已暂停，可继续"); throw e }
             catch (e: Exception) {
                 if(!currentCoroutineContext().isActive) { update("Paused", message = "已暂停，可继续"); throw CancellationException("下载已停止", e) }

@@ -19,5 +19,8 @@ $packages = @(foreach($entry in @(
         InstalledBytes=[long](Get-ChildItem -LiteralPath $entry.Directory -Recurse -File | Measure-Object Length -Sum).Sum
     }
 })
-$packages | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $projectRoot 'src/BiliDownload.Windows/Assets/components.json') -Encoding utf8
+$manifest = Join-Path $projectRoot 'src/BiliDownload.Windows/Assets/components.json'
+$existing = Get-Content -Raw -LiteralPath $manifest | ConvertFrom-Json
+$packages += @($existing | Where-Object { $_.Id -notin @('ffmpeg-minimal','ffmpeg-full') })
+ConvertTo-Json -InputObject $packages -Depth 4 | Set-Content -LiteralPath $manifest -Encoding utf8
 Write-Output 'Component archives and pinned download manifest prepared.'

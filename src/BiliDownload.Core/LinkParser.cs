@@ -4,15 +4,18 @@ namespace BiliDownload.Core;
 
 public static partial class LinkParser
 {
-    [GeneratedRegex(@"https?://(?:[a-z0-9-]+\.)*(?:bilibili\.com|b23\.tv)(?::\d+)?(?=[/?#\s<>""，。；！？、）】]|$)(?:[/?#][^\s<>""，。；！？、）】]*)?", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"https?://(?:[a-z0-9-]+\.)*(?:bilibili\.com|b23\.tv|youtube\.com|youtu\.be)(?::\d+)?(?=[/?#\s<>""，。；！？、）】]|$)(?:[/?#][^\s<>""，。；！？、）】]*)?", RegexOptions.IgnoreCase)]
     private static partial Regex Links();
     [GeneratedRegex(@"(?<![a-zA-Z0-9])(?:BV[0-9a-zA-Z]{10}|av\d+)(?![a-zA-Z0-9])", RegexOptions.IgnoreCase)]
     private static partial Regex VideoIds();
 
-    public static IReadOnlyList<Uri> Extract(string input)
+    public static IReadOnlyList<Uri> Extract(string input) => ExtractSupported(input).Where(IsAllowed).ToArray();
+
+    public static IReadOnlyList<Uri> ExtractSupported(string input)
     {
         var links = Links().Matches(input).Select(m => m.Value.TrimEnd('.', ',', ';', ')', ']', '!', '?'))
-            .Select(value => new Uri(value)).Where(IsAllowed).ToList();
+            .Select(value => Uri.TryCreate(value, UriKind.Absolute, out var uri) ? uri : null).OfType<Uri>()
+            .Where(u => IsAllowed(u) || YoutubeLink.Parse(u) != null).ToList();
         if (links.Count == 0 && !input.Contains("://", StringComparison.Ordinal))
             links.AddRange(VideoIds().Matches(input).Select(m => new Uri("https://www.bilibili.com/video/" + m.Value)));
         return links.DistinctBy(u => u.AbsoluteUri).ToArray();

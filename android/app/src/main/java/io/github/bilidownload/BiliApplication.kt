@@ -15,11 +15,12 @@ class BiliApplication : Application() {
     override fun onCreate() {
         super.onCreate(); app = this
         getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel("downloads", "视频下载", NotificationManager.IMPORTANCE_LOW))
-        session = Session(this); api = BiliApi(session); store = TaskStore(this); engine = DownloadEngine(this)
+        youtube = YoutubeClient(this, Session(this, "youtube-session", "BiliDownloadYoutubeSession")); session = Session(this); api = BiliApi(session); store = TaskStore(this); engine = DownloadEngine(this)
     }
     companion object {
         lateinit var app: BiliApplication; private set
         lateinit var session: Session; private set
+        lateinit var youtube: YoutubeClient; private set
         lateinit var api: BiliApi; private set
         lateinit var store: TaskStore; private set
         lateinit var engine: DownloadEngine; private set

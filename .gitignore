@@ -15,5 +15,8 @@ local.properties
 keystore.properties
 signing.properties
 session.dat
+youtube-session.dat*
+cookies.txt
+__pycache__/
 tasks.db*
 artifacts/

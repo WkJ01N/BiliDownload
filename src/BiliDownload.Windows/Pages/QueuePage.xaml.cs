@@ -52,6 +52,7 @@ public sealed partial class QueuePage : Page
         try { await App.Services.Queue.RemoveAsync(item.Id); }
         catch { Show("记录移除失败，请重试。", InfoBarSeverity.Error); }
     }
+    private void YoutubeSettings_Click(object sender, RoutedEventArgs e) => App.Main.OpenYoutubeSettings();
     private async void Login_Click(object sender, RoutedEventArgs e)
     {
         var result = await LoginFlow.ShowAsync(XamlRoot);

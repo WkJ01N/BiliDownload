@@ -2,12 +2,14 @@
  <ScrollViewer><StackPanel Padding="24,20" Spacing="20" MaxWidth="900" HorizontalAlignment="Stretch">
   <TextBlock Text="设置" Style="{StaticResource TitleTextBlockStyle}"/>
   <Border Background="Transparent" CornerRadius="0" Padding="0"><StackPanel Spacing="12"><TextBlock Text="B 站账号" Style="{StaticResource SubtitleTextBlockStyle}"/><TextBlock x:Name="AccountStatus" Text="未登录" TextWrapping="Wrap"/><StackPanel Orientation="Horizontal" Spacing="10"><Button x:Name="AccountLoginButton" Content="扫码登录" Click="Login_Click"/><Button x:Name="AccountLogoutButton" Visibility="Collapsed" Content="退出登录" Click="Logout_Click"/></StackPanel></StackPanel></Border>
+  <StackPanel Spacing="8"><TextBlock Text="YouTube 会话" Style="{StaticResource SubtitleTextBlockStyle}"/><TextBlock x:Name="YoutubeStatus"/><StackPanel Orientation="Horizontal" Spacing="8"><Button x:Name="YoutubeImport" Content="导入 cookies.txt" Click="YoutubeImport_Click"/><Button x:Name="YoutubeRemove" Content="移除会话" Click="YoutubeRemove_Click"/></StackPanel></StackPanel>
   <TextBox x:Name="DirectoryBox" Header="视频保存目录"/><Button Content="选择保存目录" HorizontalAlignment="Left" Click="Directory_Click"/>
   <Border Background="Transparent" CornerRadius="0" Padding="0"><StackPanel Spacing="12">
    <TextBlock Text="组件管理" Style="{StaticResource SubtitleTextBlockStyle}"/>
 
    <TextBlock x:Name="ComponentStatus" TextWrapping="Wrap"/>
-   <ComboBox x:Name="ComponentChoice" Header="下载或切换 FFmpeg" HorizontalAlignment="Stretch" DisplayMemberPath="Name" SelectionChanged="ComponentChoice_Changed"/>
+   <ComboBox x:Name="ComponentChoice" Header="下载组件" HorizontalAlignment="Stretch" DisplayMemberPath="Name" SelectionChanged="ComponentChoice_Changed"/>
+   <Button x:Name="CheckYoutube" Content="检查 YouTube 组件更新" Visibility="Collapsed" Click="CheckYoutube_Click"/>
    <TextBlock x:Name="ComponentSize" TextWrapping="Wrap" Foreground="{ThemeResource RadixSecondaryTextBrush}"/>
    <StackPanel Orientation="Horizontal" Spacing="8"><Button x:Name="InstallComponent" Content="下载 / 使用" Click="InstallComponent_Click"/><Button x:Name="CancelComponent" Content="取消下载" IsEnabled="False" Click="CancelComponent_Click"/></StackPanel>
    <StackPanel Orientation="Horizontal" Spacing="8"><Button x:Name="RemoveComponent" Content="移除组件" Click="RemoveComponent_Click"/><Button x:Name="BundledComponent" Content="恢复默认工具" Click="UseBundled_Click"/></StackPanel>
@@ -27,7 +29,7 @@
   <ToggleSwitch x:Name="DetectSwitch" Header="窗口获得焦点时识别剪贴板" OffContent="关闭" OnContent="开启"/>
   <ToggleSwitch x:Name="MonitorSwitch" Header="程序运行时监听剪贴板" OffContent="关闭" OnContent="开启"/>
   <ToggleSwitch x:Name="AutoDownloadSwitch" AutomationProperties.AutomationId="AutoDownloadSwitch" Header="点击通知后自动下载" OffContent="先解析，确认后下载" OnContent="下载链接指定的单项"/>
-  <ToggleSwitch x:Name="ExpandRelatedSwitch" AutomationProperties.AutomationId="ExpandRelatedSwitch" Header="展开其他分 P／集供选择" OffContent="仅处理链接指定条目" OnContent="展示完整列表，勾选后下载"/>
+  <ToggleSwitch x:Name="ExpandRelatedSwitch" AutomationProperties.AutomationId="ExpandRelatedSwitch" Header="展开分 P、剧集和播放列表" OffContent="仅处理链接指定条目" OnContent="展示完整列表，勾选后下载"/>
 
   <TextBlock x:Name="NotificationStatus" TextWrapping="Wrap"/>
   <HyperlinkButton Content="打开 Windows 通知设置" NavigateUri="ms-settings:notifications" Padding="0,8" HorizontalAlignment="Left"/>
@@ -35,7 +37,7 @@
   <ComboBox x:Name="ThemeBox" Header="外观" SelectedValuePath="Tag"><ComboBoxItem Content="跟随系统" Tag="Default"/><ComboBoxItem Content="浅色" Tag="Light"/><ComboBoxItem Content="深色" Tag="Dark"/></ComboBox>
   <Button Content="保存设置" Style="{StaticResource AccentButtonStyle}" Click="Save_Click"/>
   <InfoBar x:Name="Notice" IsOpen="False"/>
-  <TextBlock Text="BiliDownload  Windows 预览版 0.1.6" Foreground="{ThemeResource RadixSecondaryTextBrush}"/>
+  <TextBlock Text="BiliDownload  Windows 预览版 0.2.0" Foreground="{ThemeResource RadixSecondaryTextBrush}"/>
   <HyperlinkButton Content="GitHub 仓库" NavigateUri="https://github.com/WkJ01N/BiliDownload" Padding="0,8" HorizontalAlignment="Left"/>
  </StackPanel></ScrollViewer>
 </Page>

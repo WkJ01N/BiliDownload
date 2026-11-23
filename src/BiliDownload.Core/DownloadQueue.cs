@@ -32,7 +32,7 @@ public sealed class DownloadQueue : IAsyncDisposable
         workers = Enumerable.Range(0, 2).Select(_ => Task.Run(WorkerAsync)).ToArray();
     }
     public IReadOnlyList<DownloadTaskData> Snapshot() { lock (sync) return tasks.Values.OrderByDescending(t => t.CreatedAt).ToArray(); }
-    public async Task AddAsync(IEnumerable<MediaItem> items, int quality, string directory, IReadOnlyDictionary<string, string>? fileNames = null)
+    public async Task AddAsync(IEnumerable<MediaItem> items, int quality, string directory, IReadOnlyDictionary<string, string>? fileNames = null, string? formatId = null)
     {
         foreach (var item in items)
         {
@@ -40,7 +40,7 @@ public sealed class DownloadQueue : IAsyncDisposable
             lock (sync)
             {
                 if (tasks.Values.Any(t => t.Item.Id == item.Id && t.Quality == quality && t.State is not (DownloadState.Canceled or DownloadState.Failed))) continue;
-                data = new(Guid.NewGuid(), item, quality, directory, CreatedAt: DateTimeOffset.UtcNow, OutputFileName: fileNames != null && fileNames.TryGetValue(item.Id, out var name) ? FileNaming.Normalize(name) : null);
+                data = new(Guid.NewGuid(), item, quality, directory, CreatedAt: DateTimeOffset.UtcNow, OutputFileName: fileNames != null && fileNames.TryGetValue(item.Id, out var name) ? FileNaming.Normalize(name) : null, FormatId: formatId);
                 tasks.Add(data.Id, data); revisions[data.Id] = 0; executionGates[data.Id] = new(1);
                 store.SaveAsync(data).GetAwaiter().GetResult();
             }
@@ -119,14 +119,25 @@ public sealed class DownloadQueue : IAsyncDisposable
                         Directory.CreateDirectory(item.Directory);
                         var work = Path.Combine(cache, id.ToString("N")); Directory.CreateDirectory(work);
                         await UpdateAsync(id, revision, t => t with { State = DownloadState.Downloading, Message = "获取媒体源" });
-                        DownloadPlan? plan = null; List<string> videoFiles = []; string? audioFile = null;
+                        var actualQuality = item.Quality;
+                        IReadOnlyList<string> videoFiles = []; string? audioFile = null;
+                        if (item.Item.YoutubeId != null)
+                        {
+                            if (media is not MediaRouter router) throw new BiliException("请安装 YouTube 下载组件。", BiliErrorKind.YoutubeComponent);
+                            var tracks = await router.FetchAsync(item, work, fraction => UpdateAsync(id, revision, t => t with {
+                                Progress = fraction * 95, Message = "正在下载 YouTube 视频" }, false).GetAwaiter().GetResult(), ct);
+                            videoFiles = tracks.Video; audioFile = tracks.Audio; actualQuality = tracks.Quality;
+                            await UpdateAsync(id, revision, t => t with { FormatId = tracks.Format });
+                        }
+                        else
                         for (var attempt = 0; attempt < 3; attempt++)
                         {
                             try
                             {
-                                plan = await media.GetPlanAsync(item.Item, item.Quality, ct);
+                                var plan = await media.GetPlanAsync(item.Item, item.Quality, ct);
+                                actualQuality = plan.Variant.Quality;
                                 var parts = plan.Video.Concat(plan.Audio is { } a ? [a] : []).ToArray();
-                                videoFiles = []; audioFile = null;
+                                var files = new List<string>(); videoFiles = files; audioFile = null;
                                 for (var p = 0; p < parts.Length; p++)
                                 {
                                     var index = p; var part = parts[p];
@@ -139,7 +150,7 @@ public sealed class DownloadQueue : IAsyncDisposable
                                         UpdateAsync(id, revision, t => t with { Progress = (index + fraction) / parts.Length * 95,
                                             Message = $"正在下载  {plan.Variant.Label}" }, false).GetAwaiter().GetResult();
                                     }, ct);
-                                    if (p < plan.Video.Count) videoFiles.Add(file); else audioFile = file;
+                                    if (p < plan.Video.Count) files.Add(file); else audioFile = file;
                                 }
                                 break;
                             }
@@ -155,7 +166,7 @@ public sealed class DownloadQueue : IAsyncDisposable
                         await MediaDownloader.MergeAsync(executable, videoFiles, audioFile, temporary, ct);
                         ct.ThrowIfCancellationRequested();
                         var filename = item.OutputFileName ?? (LinkParser.SafeName($"{item.Item.Title} P{item.Item.Index} {item.Item.PartTitle}") +
-                            $" [{item.Item.Id.Replace(':', '-')}-{plan!.Variant.Quality}].mp4");
+                            $" [{item.Item.Id.Replace(':', '-')}-{actualQuality}].mp4");
                         var staging = Path.Combine(item.Directory, $".bilidownload-{id:N}.tmp");
                         try
                         {

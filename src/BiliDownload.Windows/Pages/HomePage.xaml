@@ -3,7 +3,7 @@
     <TextBlock Text="链接解析" AutomationProperties.AutomationId="HomePageTitle" Style="{StaticResource TitleTextBlockStyle}"/>
     <Border Background="Transparent" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0" CornerRadius="0" Padding="0" BackgroundSizing="InnerBorderEdge">
       <StackPanel Spacing="14">
-        <TextBox x:Name="LinkInput" Header="视频链接" PlaceholderText="粘贴 B 站链接或 BV 号，多条链接可换行" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="100" MaxHeight="180"/>
+        <TextBox x:Name="LinkInput" Header="视频链接" PlaceholderText="粘贴 B 站或 YouTube 链接，也支持 BV 号" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="100" MaxHeight="180"/>
         <StackPanel Orientation="Horizontal" Spacing="10"><Button x:Name="ParseButton" Content="解析链接" Style="{StaticResource AccentButtonStyle}" Click="Parse_Click"/><Button Content="粘贴" Click="Paste_Click"/><ProgressRing x:Name="Busy" Width="24" Height="24" IsActive="False"/></StackPanel>
       </StackPanel>
     </Border>
@@ -19,5 +19,6 @@
         </Grid>
       </DataTemplate></ListView.ItemTemplate>
     </ListView>
+    <Button x:Name="MoreButton" Visibility="Collapsed" Content="加载更多视频" Click="More_Click"/>
   </StackPanel></ScrollViewer>
 </Page>

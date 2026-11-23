@@ -16,6 +16,10 @@ jobs:
           python ./scripts/build-theme.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           git diff --exit-code -- src/BiliDownload.Windows/RadixTheme.xaml android/app/src/main/java/io/github/bilidownload/RadixTheme.kt
+      - name: Test YouTube format selection, playlists and account recovery
+        run: python -B -m unittest discover -s tests/youtube
+      - name: Verify pinned optional YouTube component
+        run: python scripts/prepare-youtube.py windows
       - name: Test download core
         run: dotnet test tests/BiliDownload.Tests/BiliDownload.Tests.csproj
       - name: Enable MSVC
@@ -32,6 +36,8 @@ jobs:
           path: |
             artifacts/BiliDownload-*-windows-x64-portable.zip
             artifacts/BiliDownload-*-windows-x64-setup.exe
+            artifacts/components/youtube-win-x64.zip
+            artifacts/components/youtube-component.json
   android:
     runs-on: ubuntu-latest
     steps:
@@ -52,4 +58,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: BiliDownload-Android-preview
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android/youtube/build/outputs/apk/debug/youtube-debug.apk

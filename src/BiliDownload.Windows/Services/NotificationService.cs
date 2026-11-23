@@ -42,7 +42,7 @@ public sealed class NotificationService : IDisposable
             var payload = new XElement("toast", new XAttribute("activationType", "protocol"),
                 new XAttribute("launch", ClipboardActivation.Create(NotificationProtocol.Scheme, request.Id)),
                 new XElement("visual", new XElement("binding", new XAttribute("template", "ToastGeneric"),
-                    new XElement("text", "检测到 B 站链接"), new XElement("text", "点击打开 BiliDownload，按你的设置下载或选择内容。"))));
+                    new XElement("text", "检测到视频链接"), new XElement("text", "点击打开 BiliDownload，按你的设置下载或选择内容。"))));
             var notification = new AppNotification(payload.ToString());
             notification.Tag = request.Id.ToString("N"); notification.Group = "clipboard";
             notification.Expiration = request.CreatedAt.AddHours(24);
