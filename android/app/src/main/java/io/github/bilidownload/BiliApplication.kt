@@ -14,12 +14,14 @@ import kotlinx.coroutines.flow.asStateFlow
 class BiliApplication : Application() {
     override fun onCreate() {
         super.onCreate(); app = this
-        getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel("downloads", "视频下载", NotificationManager.IMPORTANCE_LOW))
+        getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel("downloads", "媒体下载", NotificationManager.IMPORTANCE_LOW))
+        audio = AudioProcessor(this)
         youtube = YoutubeClient(this, Session(this, "youtube-session", "BiliDownloadYoutubeSession")); session = Session(this); api = BiliApi(session); store = TaskStore(this); engine = DownloadEngine(this)
     }
     companion object {
         lateinit var app: BiliApplication; private set
         lateinit var session: Session; private set
+        lateinit var audio: AudioProcessor; private set
         lateinit var youtube: YoutubeClient; private set
         lateinit var api: BiliApi; private set
         lateinit var store: TaskStore; private set

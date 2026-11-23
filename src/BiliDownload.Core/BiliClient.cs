@@ -206,6 +206,9 @@ public sealed partial class BiliClient : IMediaService, IDisposable
         return Variants(data);
     }
 
+    public async Task<IReadOnlyList<(AudioTrack Track, StreamPart[] Parts)>> AudioAsync(MediaItem item, CancellationToken ct) =>
+        AudioMedia.BiliTracks(await PlayInfoAsync(item, 127, ct), item.Cid);
+
     public static IReadOnlyList<MediaVariant> Variants(JsonElement data)
     {
         if (data.TryGetProperty("dash", out var dash) && dash.ValueKind == JsonValueKind.Object && dash.TryGetProperty("video", out var videos))

@@ -1,13 +1,13 @@
 package io.github.bilidownload
 
 data class MediaItem(val id: String, val title: String, val partTitle: String, val kind: String,
-    val aid: Long, val bvid: String, val cid: Long, val episodeId: Long, val index: Int, val cover: String = "", val partCount: Int = 1, val youtubeId: String? = null, val playlistId: String? = null)
+    val aid: Long, val bvid: String, val cid: Long, val episodeId: Long, val index: Int, val cover: String = "", val partCount: Int = 1, val youtubeId: String? = null, val playlistId: String? = null, val music: Boolean = false)
 data class Variant(val quality: Int, val label: String, val estimatedBytes: Long? = null, val formatId: String? = null)
 data class StreamPart(val key: String, val url: String, val backups: List<String>)
 data class DownloadPlan(val variant: Variant, val video: List<StreamPart>, val audio: StreamPart?)
 data class DownloadEntry(val id: String, val item: MediaItem, val quality: Int,
-    val state: String = "Queued", val progress: Float = 0f, val message: String = "等待下载", val uri: String? = null, val failureKind: String? = null, val outputFileName: String? = null, val finalFileName: String? = null, val formatId: String? = null)
-enum class BiliErrorKind { Unknown, LoginRequired, RequestRestricted, YoutubeSession, YoutubeComponent, YoutubeConnect }
+    val state: String = "Queued", val progress: Float = 0f, val message: String = "等待下载", val uri: String? = null, val failureKind: String? = null, val outputFileName: String? = null, val finalFileName: String? = null, val formatId: String? = null, val audioOutput: AudioOutput? = null)
+enum class BiliErrorKind { Unknown, LoginRequired, RequestRestricted, YoutubeSession, YoutubeComponent, YoutubeConnect, AudioComponent, AudioConnect, TrackChanged }
 enum class SessionState { Guest, Saved, Authenticated, Expired }
 enum class LoginOutcome { Success, Canceled, Failed }
 data class LoginResult(val outcome: LoginOutcome, val message: String? = null)

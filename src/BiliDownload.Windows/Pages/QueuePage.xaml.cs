@@ -47,7 +47,7 @@ public sealed partial class QueuePage : Page
     }
     private async void Remove_Click(object sender, RoutedEventArgs e) {
         var item = Item(sender);
-        var dialog = new ContentDialog { XamlRoot = XamlRoot, Title = "移除任务记录？", Content = "进行中的下载会停止，并清理该任务的临时缓存。已下载的视频文件会保留。", PrimaryButtonText = "移除", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Close };
+        var dialog = new ContentDialog { XamlRoot = XamlRoot, Title = "移除任务记录？", Content = "进行中的下载会停止，并清理该任务的临时缓存。已下载的文件文件会保留。", PrimaryButtonText = "移除", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Close };
         if (await DialogCoordinator.ShowAsync(dialog) != ContentDialogResult.Primary) return;
         try { await App.Services.Queue.RemoveAsync(item.Id); }
         catch { Show("记录移除失败，请重试。", InfoBarSeverity.Error); }
@@ -59,6 +59,8 @@ public sealed partial class QueuePage : Page
         if (result.Outcome == LoginOutcome.Success) Refresh();
         if (AuthRecovery.LoginMessage(result, forTask: true) is { } message) Show(message, result.Outcome == LoginOutcome.Success ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
     }
+    private void AudioSettings_Click(object sender, RoutedEventArgs e) => App.Main.OpenAudioSettings();
+    private async void AudioTrack_Click(object sender, RoutedEventArgs e) => await App.Main.ChooseAudioAsync(Item(sender).Item.PageUrl);
     private async void Copy_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -66,7 +68,7 @@ public sealed partial class QueuePage : Page
             var file = await StorageFile.GetFileFromPathAsync(ExistingPath(sender));
             var data = new DataPackage { RequestedOperation = DataPackageOperation.Copy };
             data.SetStorageItems([file]); Clipboard.SetContent(data); Clipboard.Flush();
-            Show("已复制视频文件，可在支持文件粘贴的聊天窗口中粘贴。", InfoBarSeverity.Success);
+            Show("已复制文件。", InfoBarSeverity.Success);
         }
         catch (Exception ex) { Show(ex is BiliException ? ex.Message : "文件无法复制，请检查文件是否被移动或删除。", InfoBarSeverity.Warning); }
     }
@@ -78,12 +80,12 @@ public sealed partial class QueuePage : Page
     private void Open_Click(object sender, RoutedEventArgs e)
     {
         try { Process.Start(new ProcessStartInfo(ExistingPath(sender)) { UseShellExecute = true }); }
-        catch (Exception) { Show("暂时无法打开视频，请确认下载完成且已安装播放器。", InfoBarSeverity.Warning); }
+        catch (Exception) { Show("暂时无法打开文件，请确认下载完成且已安装播放器。", InfoBarSeverity.Warning); }
     }
     private static string ExistingPath(object sender)
     {
         var item = Item(sender);
-        if (item.State != DownloadState.Completed || item.FilePath == null || !File.Exists(item.FilePath)) throw new BiliException("视频尚未下载完成，或文件已被移动、删除。");
+        if (item.State != DownloadState.Completed || item.FilePath == null || !File.Exists(item.FilePath)) throw new BiliException("文件尚未下载完成，或文件已被移动、删除。");
         return item.FilePath;
     }
     private void Show(string text, InfoBarSeverity severity) { Notice.Message = text; Notice.Severity = severity; Notice.IsOpen = true; }

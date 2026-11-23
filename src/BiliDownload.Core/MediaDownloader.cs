@@ -103,7 +103,7 @@ public sealed class MediaDownloader : IDisposable
         await RunAsync(ffmpeg, args, ct);
         if (!File.Exists(output) || new FileInfo(output).Length == 0) throw new BiliException("合并未生成有效文件。");
     }
-    private static async Task RunAsync(string executable, IEnumerable<string> arguments, CancellationToken ct)
+    internal static async Task RunAsync(string executable, IEnumerable<string> arguments, CancellationToken ct)
     {
         using var process = new Process { StartInfo = new ProcessStartInfo(executable) {
             UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true, RedirectStandardOutput = true } };

@@ -91,13 +91,14 @@ class BiliApi(private val session: Session) {
             root.optJSONObject("data") ?: root.optJSONObject("result") ?: throw BiliException("B 站接口响应格式发生变化。")
         } finally { cancelMonitor.cancel(); conn.disconnect() }
     }
-    suspend fun resolve(input: String): List<MediaItem> {
+    suspend fun resolve(input: String, target: (String?) -> Unit = {}): List<MediaItem> {
         val links = Links.extract(input); if (links.isEmpty()) throw BiliException("没有找到 B 站链接或 BV 号。")
         val items = mutableListOf<MediaItem>()
         for (original in links) {
             var url = original.replaceFirst("http://", "https://")
             url = try { shortLinks.expand(url) } catch(e: TimeoutCancellationException) { kotlinx.coroutines.currentCoroutineContext().ensureActive(); throw BiliException("短链接连接超时，请重试或使用完整链接。") }
             if (!Links.allowed(url)) throw BiliException("不支持的跳转地址。")
+            val start = items.size
             val path = URI(url).path
             val video = Regex("/video/(BV[a-zA-Z0-9]{10}|av[0-9]+)").find(path)
             if (video != null) {
@@ -115,6 +116,14 @@ class BiliApi(private val session: Session) {
                 data.optJSONArray("section").objects().forEach { episodes += it.optJSONArray("episodes").objects() }
                 episodes.distinctBy { it.optLong("id") }.forEachIndexed { index, e -> items += MediaItem("$kind:${e.getLong("id")}", data.getString("title"), "${e.optString("title")} ${e.optString("long_title")}".trim(), kind, e.optLong("aid"), e.optString("bvid"), e.optLong("cid"), e.getLong("id"), index + 1, e.optString("cover", data.optString("cover")), episodes.distinctBy { it.optLong("id") }.size) }
             } else throw BiliException("请提供视频、番剧、课程或已发布回放的视频链接；首版不录制直播。")
+            val rows = items.drop(start)
+            if(video != null) {
+                val index = Regex("(?:^|&)p=(\\d+)(?:&|$)").find(URI(url).rawQuery.orEmpty())?.groupValues?.get(1)?.toIntOrNull() ?: 1
+                target(rows.firstOrNull { it.index == index }?.id)
+            } else {
+                val ep = Regex("/ep([0-9]+)").find(path)?.groupValues?.get(1)?.toLongOrNull()
+                target(rows.firstOrNull { it.episodeId == ep }?.id)
+            }
         }
         return items.distinctBy { it.id }.ifEmpty { throw BiliException("没有找到可下载条目。") }
     }
@@ -141,6 +150,12 @@ class BiliApi(private val session: Session) {
             .map { Variant(it.getInt("id"), label(it.getInt("id")), MediaSize.estimate(data, it)) }.distinctBy { it.quality }.sortedBy { it.quality }
         if (data.optJSONArray("durl")?.length() ?: 0 > 0) return listOf(Variant(data.optInt("quality"), label(data.optInt("quality")), data.getJSONArray("durl").objects().map { it.optLong("size") }.let { sizes -> if(sizes.all { it > 0 }) sizes.sum() else null }))
         throw BiliException("没有可下载的兼容视频源，请检查账号权限。")
+    }
+    suspend fun audio(item: MediaItem) = AudioMedia.bili(info(item, 127), item.cid)
+    suspend fun audioPlan(item: MediaItem, output: AudioOutput): DownloadPlan {
+        val (track, parts) = audio(item).firstOrNull { it.first.id == output.track.id && it.first.mixed == output.track.mixed }
+            ?: throw BiliException("所选音轨已不可用，请重新解析并选择音质。", BiliErrorKind.TrackChanged)
+        return DownloadPlan(Variant(0, track.codec), parts, null)
     }
     suspend fun variants(item: MediaItem) = variants(info(item, 127))
     suspend fun plan(item: MediaItem, quality: Int): DownloadPlan {

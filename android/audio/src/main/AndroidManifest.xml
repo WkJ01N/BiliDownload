@@ -1,0 +1,11 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <permission android:name="io.github.bilidownload.audio.ENGINE" android:protectionLevel="signature" />
+    <queries><package android:name="io.github.bilidownload" /></queries>
+    <application android:label="BiliDownload 音频处理" android:allowBackup="false"
+        android:usesCleartextTraffic="false">
+        <activity android:name=".ConnectActivity" android:exported="true" android:permission="io.github.bilidownload.audio.ENGINE"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" android:excludeFromRecents="true" />
+        <service android:name=".AudioService" android:exported="true"
+            android:permission="io.github.bilidownload.audio.ENGINE" />
+    </application>
+</manifest>

@@ -3,7 +3,7 @@ package io.github.bilidownload
 import java.net.URI
 import java.net.URLDecoder
 
-data class YoutubeLink(val video: String?, val playlist: String?) {
+data class YoutubeLink(val video: String?, val playlist: String?, val music: Boolean = false) {
     companion object {
         fun parse(text: String): YoutubeLink? = runCatching {
             val uri = URI(text)
@@ -14,7 +14,7 @@ data class YoutubeLink(val video: String?, val playlist: String?) {
             val path = uri.path.trimEnd('/')
             val video = when (uri.host?.lowercase()) {
                 "youtu.be" -> path.removePrefix("/")
-                "youtube.com", "m.youtube.com", "www.youtube.com" -> when {
+                "youtube.com", "m.youtube.com", "www.youtube.com", "music.youtube.com" -> when {
                     path == "/watch" -> query["v"]
                     path.startsWith("/shorts/") -> path.removePrefix("/shorts/")
                     path == "/playlist" -> null
@@ -24,7 +24,7 @@ data class YoutubeLink(val video: String?, val playlist: String?) {
             }
             if (video != null && !video.matches(Regex("[a-zA-Z0-9_-]{11}"))) return null
             val list = query["list"]?.takeIf { it.matches(Regex("[a-zA-Z0-9_-]{2,128}")) }
-            if (video == null && list == null) null else YoutubeLink(video, list)
+            if (video == null && list == null) null else YoutubeLink(video, list, uri.host.equals("music.youtube.com", true))
         }.getOrNull()
     }
 }

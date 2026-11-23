@@ -23,6 +23,7 @@ public sealed partial class SettingsPage : Page
         Unloaded += (_, _) => componentDownload?.Cancel();
         Loaded += async (_, _) => await RefreshAccountAsync();
     }
+    public void SelectFullFfmpeg() => ComponentChoice.SelectedItem = App.Services.ComponentPackages.First(p => p.Id == "ffmpeg-full");
     public void SelectYoutubeComponent() => ComponentChoice.SelectedItem = App.Services.ComponentPackages.FirstOrDefault(p => p.Id == "youtube");
     private void RefreshYoutubeAccount()
     {

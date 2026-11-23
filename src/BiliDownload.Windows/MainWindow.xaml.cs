@@ -109,6 +109,12 @@ public sealed partial class MainWindow : Window
     }
     public void OpenYoutubeSettings() { OpenSettings(); (ContentFrame.Content as SettingsPage)?.SelectYoutubeComponent(); }
     public void OpenSettings() { Navigation.SelectedItem = Navigation.SettingsItem; ContentFrame.Navigate(typeof(SettingsPage)); }
+    public void OpenAudioSettings() { OpenSettings(); (ContentFrame.Content as SettingsPage)?.SelectFullFfmpeg(); }
+    public async Task ChooseAudioAsync(string url) {
+        Navigation.SelectedItem = Navigation.MenuItems.OfType<NavigationViewItem>().First(i => i.Tag as string == "home");
+        if(ContentFrame.Content is not HomePage) ContentFrame.Navigate(typeof(HomePage));
+        await ((HomePage)ContentFrame.Content).ChooseAudioAsync(url);
+    }
     public void OpenQueue()
     {
         Navigation.SelectedItem = Navigation.MenuItems.OfType<NavigationViewItem>().First(i => i.Tag as string == "queue");

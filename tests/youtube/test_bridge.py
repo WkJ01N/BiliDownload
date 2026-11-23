@@ -98,3 +98,47 @@ class EngineTests(unittest.TestCase):
                 self.video["url"] = self.video["url"].replace("lmt=123", "lmt=456")
                 bridge.fetch_tracks(MagicMock(), self.info, choices, request, work, lambda **_: None)
         self.assertEqual(kept, [False, False, False, True])
+
+    def test_audio_priority_language_quality_and_mixed_cost(self):
+        flac = dict(self.audio, format_id="lossless", acodec="flac", language="en", language_preference=1)
+        dub = dict(flac, format_id="dub", language="fr", language_preference=-1, abr=1000)
+        mux = dict(self.video, acodec="mp4a", abr=128)
+        rows = bridge.audio_choices(dict(self.info, formats=[dub, self.audio, flac, mux, dict(flac,has_drm=True)]))
+        self.assertEqual([r["format"] for r, _ in rows], ["lossless", "140", "dub"])
+        self.assertTrue(all(not row["mixed"] for row, _ in rows))
+        mixed = bridge.audio_choices(dict(self.info, formats=[mux]))[0][0]
+        self.assertTrue(mixed["mixed"])
+        self.assertEqual(mixed["bytes"], 200)
+        self.assertEqual(mixed["audioBytes"], 192000)
+
+    def test_audio_session_uses_music_origin_and_no_private_urls(self):
+        module = MagicMock()
+        client = module.YoutubeDL.return_value.__enter__.return_value
+        client.extract_info.return_value = dict(self.info, artist="Artist",album="Album")
+        with patch.object(bridge,"ydl_module",module,create=True):
+            data = bridge.execute({"op":"inspect","id":self.info["id"],"mode":"audio","music":True,"cookies":"own"},"qjs",Path.cwd())
+        client.cookiejar.load.assert_called_once()
+        self.assertIn("music.youtube.com",client.extract_info.call_args.args[0])
+        self.assertEqual(data["album"], "Album")
+        self.assertNotIn("media.example",str(data))
+
+    def test_audio_fetch_is_one_exact_track(self):
+        visited = []
+        class Downloader:
+            def __init__(self,*args): pass
+            def add_progress_hook(self,hook): pass
+            def download(self,name,data):
+                visited.append(data["format_id"]); Path(name).write_bytes(b"x"*data["filesize"]); return True,True
+        module = MagicMock()
+        module.downloader.get_suitable_downloader.return_value = Downloader
+        choices = bridge.audio_choices(self.info)
+        with tempfile.TemporaryDirectory() as temp, patch.object(bridge,"ydl_module",module,create=True):
+            path = Path(temp)
+            request = dict(mode="audio",format="140",mixed=False)
+            bridge.fetch_tracks(MagicMock(),self.info,choices,request,path,lambda **k: None)
+            self.assertTrue((path/"audio.track").exists())
+            self.assertFalse((path/"video.track").exists())
+            for stale in [dict(request,format="gone"),dict(request,mixed=True)]:
+                with self.assertRaisesRegex(bridge.EngineError,"TrackChanged"):
+                    bridge.fetch_tracks(MagicMock(),self.info,choices,stale,path,lambda **k: None)
+        self.assertEqual(visited,["140"])

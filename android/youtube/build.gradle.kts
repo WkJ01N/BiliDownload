@@ -3,7 +3,7 @@ plugins { id("com.android.application") }
 android {
     namespace = "io.github.bilidownload.youtube"
     compileSdk = 36
-    defaultConfig { applicationId = "io.github.bilidownload.youtube"; minSdk = 29; targetSdk = 36; versionCode = 7; versionName = "0.2.0" }
+    defaultConfig { applicationId = "io.github.bilidownload.youtube"; minSdk = 29; targetSdk = 36; versionCode = 8; versionName = "0.3.0" }
     buildFeatures { aidl = true }
     sourceSets["main"].aidl.srcDir("../protocol")
     sourceSets["main"].assets.srcDir("build/generated/engine/assets")

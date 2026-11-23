@@ -27,6 +27,13 @@ jobs:
       - name: Publish preview
         shell: pwsh
         run: ./scripts/build-windows.ps1
+      - name: Verify audio containers, quality and tags
+        shell: pwsh
+        run: |
+          $ffmpeg = Join-Path (./scripts/get-component.ps1 -Id ffmpeg-full) 'ffmpeg.exe'
+          python scripts/prepare-audio-fixtures.py $ffmpeg .build/audio-fixtures
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet run --project tools/BiliDownload.Probe -- --verify-audio-files $ffmpeg .build/audio-fixtures .build/audio-proof
       - name: Verify package and install directory helper
         shell: pwsh
         run: ./scripts/test-install-directory.ps1
@@ -52,12 +59,43 @@ jobs:
           log-accepted-android-sdk-licenses: false
       - name: Install SDK
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - name: Cache native audio tools
+        id: audio-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            android/audio/build/generated/jniLibs
+            .build/audio/arm64-v8a/ffmpeg/COPYING.LGPLv2.1
+            .build/audio/arm64-v8a/lame/COPYING
+          key: android-audio-ndk28-${{ hashFiles('scripts/build-android-audio.sh', 'packaging/audio.json') }}
+      - name: Build optional audio processor
+        if: steps.audio-cache.outputs.cache-hit != 'true'
+        run: |
+          sdkmanager "ndk;28.2.13676358"
+          ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358" bash scripts/build-android-audio.sh
       - name: Build, test and lint
         working-directory: android
         run: bash ./gradlew assembleDebug testDebugUnitTest lintDebug --console plain
+      - name: Prepare audio fixtures and instrumentation
+        run: |
+          if ! command -v ffmpeg >/dev/null; then sudo apt-get update && sudo apt-get install -y ffmpeg; fi
+          python scripts/prepare-audio-fixtures.py ffmpeg android/app/build/generated/audioFixtures
+          cd android && bash gradlew :app:assembleDebugAndroidTest
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify audio processing and publication on Android
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          script: bash scripts/test-android-audio.sh
       - uses: actions/upload-artifact@v4
         with:
           name: BiliDownload-Android-preview
           path: |
             android/app/build/outputs/apk/debug/app-debug.apk
             android/youtube/build/outputs/apk/debug/youtube-debug.apk
+            android/audio/build/outputs/apk/debug/audio-debug.apk

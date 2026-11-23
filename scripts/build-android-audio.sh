@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Build the offline audio processor for all supported Android ABIs.
+set -euo pipefail
+root="$(cd "$(dirname "$0")/.." && pwd)"
+cache="$root/.build/audio"
+out="$root/android/audio/build/generated/jniLibs"
+mkdir -p "$cache" "$out"
+fetch() {
+  local path="$1" url="$2" digest="$3"
+  if ! echo "$digest  $path" | sha256sum -c --status; then
+    curl --retry 3 -fLsS "$url" -o "$path.part"
+    echo "$digest  $path.part" | sha256sum -c --status
+    mv "$path.part" "$path"
+  fi
+}
+fetch "$cache/lame-3.100.tar.gz" https://deb.debian.org/debian/pool/main/l/lame/lame_3.100.orig.tar.gz ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e
+fetch "$cache/ffmpeg.tar.gz" https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/5c4f5744cd a34b707c67140a37ddd11c5475fa09135301a7c667f1d78c5702d544bba6ce77
+ndk="${ANDROID_NDK_HOME:-${ANDROID_HOME:?}/ndk/28.2.13676358}"
+host=linux-x86_64
+if command -v cygpath >/dev/null; then ndk="$(cygpath -u "$ndk")"; host=windows-x86_64; fi
+bin="$ndk/toolchains/llvm/prebuilt/$host/bin"
+export PATH="$bin:$PATH"
+make_cmd="${MAKE:-make}"
+for abi in "${@:-arm64-v8a armeabi-v7a x86_64 x86}"; do for arch in $abi; do
+  case "$arch" in
+    arm64-v8a) target=aarch64-linux-android; cpu=aarch64;;
+    armeabi-v7a) target=armv7a-linux-androideabi; cpu=arm;;
+    x86_64) target=x86_64-linux-android; cpu=x86_64;;
+    x86) target=i686-linux-android; cpu=x86;;
+    *) exit 2;;
+  esac
+  work="$cache/$arch"
+  mkdir -p "$work"/{lame,ffmpeg,prefix} "$out/$arch"
+  stamp="$out/$arch/libaudio-ffmpeg.so"
+  if [[ -s "$stamp" && "$stamp" -nt "$0" ]]; then continue; fi
+  tar -xzf "$cache/lame-3.100.tar.gz" -C "$work/lame" --strip-components=1
+  tar -xzf "$cache/ffmpeg.tar.gz" -C "$work/ffmpeg" --strip-components=1
+  prefix="$work/prefix"
+  if command -v cygpath >/dev/null; then prefix="$(cygpath -ms "$prefix")"; fi
+  export CC="clang --target=${target}29" AR=llvm-ar RANLIB=llvm-ranlib NM=llvm-nm STRIP=llvm-strip
+  (cd "$work/lame"
+   ac_cv_func_strtol=yes CFLAGS="-O2 -fPIC" ./configure --host="$target" --prefix="$prefix" --disable-shared --enable-static --disable-frontend --disable-decoder --disable-nasm
+   "$make_cmd" -j4 -C libmp3lame
+   "$make_cmd" -C libmp3lame install
+   "$make_cmd" -C include install)
+  (cd "$work/ffmpeg"
+   ./configure --target-os=android --arch="$cpu" --enable-cross-compile --cc="$CC" --ar="$AR" --nm="$NM" --ranlib="$RANLIB" --strip="$STRIP" \
+     --disable-autodetect --disable-everything --disable-network --disable-doc --disable-debug --disable-x86asm --disable-ffplay --disable-ffprobe --disable-avdevice --disable-swscale \
+     --enable-ffmpeg --enable-small --enable-static --disable-shared --enable-protocol=file \
+     --enable-demuxer=mov,matroska,ogg,flac,aac,mp3,flv,mpegts,concat,eac3,ac3 \
+     --enable-muxer=mp4,mp3,opus,flac --enable-parser=aac,ac3,flac,mpegaudio,opus \
+     --enable-decoder=aac,aac_fixed,opus,flac,eac3,ac3,mp3,vorbis \
+     --enable-encoder=libmp3lame --enable-libmp3lame --enable-filter=aresample,aformat,anull --enable-bsf=aac_adtstoasc \
+     --extra-cflags="-Os -fPIC -I$prefix/include" --extra-ldflags="-L$prefix/lib -Wl,-z,max-page-size=16384 -pie"
+   "$make_cmd" -j"${BUILD_JOBS:-6}" ffmpeg
+   llvm-strip -o "$stamp.tmp" ffmpeg
+   mv "$stamp.tmp" "$stamp")
+done; done

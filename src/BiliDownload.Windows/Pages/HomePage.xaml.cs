@@ -18,11 +18,44 @@ public sealed partial class HomePage : Page
     private readonly Queue<PlaylistCursor> pages = new();
     private string? qualityReference;
     private bool updatingQuality;
-    private bool youtubeRecovery;
+    private bool youtubeRecovery, audioRecovery;
+    public async Task ChooseAudioAsync(string url) { LinkInput.Text = url; await ParseAsync(false); ModeBox.SelectedIndex = 2; }
     private readonly Dictionary<string, IReadOnlyList<MediaVariant>> estimates = new();
+    private readonly Dictionary<string,IReadOnlyList<AudioTrack>> audioTracks = new();
+    private readonly Dictionary<string,string> trackIds = new();
+    private bool AudioMode(MediaItem item) => ModeBox.SelectedIndex == 2 || ModeBox.SelectedIndex <= 0 && item.Music;
+    private int Rate => ExportBox.SelectedIndex == 1 ? RateBox.SelectedIndex switch { 1 => 192, 2 => 128, _ => 320 } : 0;
+    private AudioTrack? Pick(MediaItem item) => audioTracks.TryGetValue(item.Id, out var list)
+        ? list.FirstOrDefault(t => t.Id == trackIds.GetValueOrDefault(item.Id)) ?? list.FirstOrDefault() : null;
+    private async Task<AudioOutput> AudioForAsync(MediaItem item, CancellationToken ct)
+    {
+        if (!audioTracks.ContainsKey(item.Id)) {
+            var list = await App.Services.Media.AudioAsync(item, ct); ct.ThrowIfCancellationRequested(); audioTracks[item.Id] = list;
+        }
+        return new(Pick(item) ?? throw new BiliException("当前没有可用音轨。"), Rate);
+    }
+    private string NameFor(MediaItem item) => FileNaming.Render(item, App.Services.Settings.FileNameTemplate, names.GetValueOrDefault(item.Id),
+        AudioMode(item) ? Rate > 0 ? ".mp3" : Pick(item)?.Extension ?? ".m4a" : ".mp4");
+    private async void Track_Click(object sender, RoutedEventArgs e) {
+        var button = (Button)sender; var item = resolvedItems.First(i => i.Id == (string)button.Tag);
+        try {
+            await AudioForAsync(item, CancellationToken.None);
+            var menu = new MenuFlyout();
+            void Add(string label, string? id) {
+                var option = new ToggleMenuFlyoutItem { Text = label, IsChecked = trackIds.GetValueOrDefault(item.Id) == id };
+                option.Click += (_, _) => { if(id == null) trackIds.Remove(item.Id); else trackIds[item.Id] = id; Estimate_Changed(this,null!); }; menu.Items.Add(option);
+            }
+            Add("自动最高", null); foreach(var track in audioTracks[item.Id]) Add(track.Label,track.Id); menu.ShowAt(button);
+        } catch (Exception ex) { Recovery(ex); Show(ex.Message, InfoBarSeverity.Warning); }
+    }
     public sealed class ResultRow(MediaItem item, string fileName) : System.ComponentModel.INotifyPropertyChanged {
         public MediaItem Item { get; } = item;
-        public string FileName { get; } = fileName;
+        private string name = fileName;
+        public string FileName { get => name; set { name = value; PropertyChanged?.Invoke(this, new(nameof(FileName))); } }
+        private Visibility audioVisibility = Visibility.Collapsed;
+        private string choice = "音质：自动最高";
+        public string AudioChoice { get => choice; set { choice = value; PropertyChanged?.Invoke(this,new(nameof(AudioChoice))); } }
+        public Visibility AudioVisibility { get => audioVisibility; set { audioVisibility = value; PropertyChanged?.Invoke(this, new(nameof(AudioVisibility))); } }
         private string sizeText = "";
         public string SizeText { get => sizeText; set { sizeText = value; PropertyChanged?.Invoke(this, new(nameof(SizeText))); } }
         public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
@@ -33,16 +66,16 @@ public sealed partial class HomePage : Page
     }
     private void RefreshNames() {
         var ids = Results.SelectedItems.Cast<ResultRow>().Select(r => r.Id).ToHashSet();
-        Results.ItemsSource = resolvedItems.Select(i => new ResultRow(i, FileNaming.Render(i, App.Services.Settings.FileNameTemplate, names.GetValueOrDefault(i.Id)))).ToArray();
+        Results.ItemsSource = resolvedItems.Select(i => new ResultRow(i, NameFor(i))).ToArray();
         foreach (var row in Results.Items.Cast<ResultRow>().Where(r => ids.Contains(r.Id))) Results.SelectedItems.Add(row);
     }
     private async void Rename_Click(object sender, RoutedEventArgs e) {
         var id = (string)((Button)sender).Tag;
         var item = resolvedItems.First(i => i.Id == id);
-        var box = new TextBox { Text = Path.GetFileNameWithoutExtension(FileNaming.Render(item, App.Services.Settings.FileNameTemplate, names.GetValueOrDefault(id))), Header = "文件名（自动添加 .mp4）", AcceptsReturn = false };
+        var box = new TextBox { Text = Path.GetFileNameWithoutExtension(NameFor(item)), Header = "文件名（自动添加 " + Path.GetExtension(NameFor(item)) + "）", AcceptsReturn = false };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(box, "RenameFileName");
         var preview = new TextBlock { TextWrapping = TextWrapping.Wrap };
-        void Update() => preview.Text = "实际文件名：" + FileNaming.Normalize(box.Text);
+        void Update() => preview.Text = "实际文件名：" + FileNaming.Normalize(box.Text, Path.GetExtension(NameFor(item)));
         box.TextChanged += (_, _) => Update(); Update();
         var panel = new StackPanel { Spacing = 12 }; panel.Children.Add(box); panel.Children.Add(preview);
         var dialog = new ContentDialog { XamlRoot = XamlRoot, Title = "修改文件名", Content = panel, PrimaryButtonText = "保存", SecondaryButtonText = "恢复默认", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Primary };
@@ -63,7 +96,7 @@ public sealed partial class HomePage : Page
         var catalogs = await ParseAsync(true, false);
         if (catalogs != null && fromNotification && ClipboardPolicy.ShouldAutoDownload(App.Services.Settings, request.Links.Length, catalogs))
         {
-            if (QualityBox.SelectedItem is MediaVariant v && !WithinDefault(v)) {
+            if (Results.SelectedItems.Cast<ResultRow>().Any(r => !AudioMode(r.Item)) && QualityBox.SelectedItem is MediaVariant v && !WithinDefault(v)) {
                 Show("没有可用的 1080p 及以下画质，请确认画质后手动下载。", InfoBarSeverity.Warning); return;
             }
             await DownloadSelectedAsync(true);
@@ -74,7 +107,7 @@ public sealed partial class HomePage : Page
     {
         CancelPending(); using var current = new CancellationTokenSource(); parsing = current; var ct = current.Token;
         var selectedPlaylists = Results.SelectedItems.Cast<ResultRow>().Select(r => r.Item).Where(i => i.PlaylistId != null).ToArray();
-        estimates.Clear(); qualityReference = null; pages.Clear(); MoreButton.Visibility = Visibility.Collapsed;
+        estimates.Clear(); audioTracks.Clear(); qualityReference = null; pages.Clear(); MoreButton.Visibility = Visibility.Collapsed;
         clipboardMode = fromClipboard;
         var requestInput = LinkInput.Text;
         var sameInput = preserveSelection && lastInput == requestInput;
@@ -97,6 +130,7 @@ public sealed partial class HomePage : Page
                 }
             }
             foreach (var catalog in catalogs) {
+                if(catalog.TargetItemId != null && catalog.InitialAudio != null) audioTracks[catalog.TargetItemId] = catalog.InitialAudio;
                 if (catalog.More != null) pages.Enqueue(catalog.More);
                 if (catalog.TargetItemId != null && catalog.InitialVariants != null) estimates[catalog.TargetItemId] = catalog.InitialVariants;
             }
@@ -104,15 +138,20 @@ public sealed partial class HomePage : Page
             var items = fromClipboard ? ClipboardPolicy.VisibleItems(App.Services.Settings, catalogs).ToArray() : catalogs.SelectMany(c => c.Items).DistinctBy(i => i.Id).ToArray();
             if (items.Length == 0) throw new BiliException("链接指定的条目已不可用，请重新解析或选择其他内容。");
             if (!sameInput) names.Clear();
+            if (!sameInput) {
+                trackIds.Clear(); ModeBox.SelectedIndex = items.All(i => i.Music) ? 2 : items.All(i => !i.Music) ? 1 : 0;
+                ExportBox.SelectedIndex = RateBox.SelectedIndex = 0;
+            }
+            items = items.OrderBy(i => i.Music).ToArray();
             resolvedItems = items;
             ResultTitle.Visibility = ResultActions.Visibility = Results.Visibility = Visibility.Visible;
-            Results.ItemsSource = items.Select(i => new ResultRow(i, FileNaming.Render(i, App.Services.Settings.FileNameTemplate, names.GetValueOrDefault(i.Id)))).ToArray(); ResultTitle.Text = $"找到 {items.Length} 个条目"; lastInput = requestInput;
+            Results.ItemsSource = items.Select(i => new ResultRow(i, NameFor(i))).ToArray(); ResultTitle.Text = $"找到 {items.Length} 个条目"; lastInput = requestInput;
             var targets = catalogs.Where(c => c.TargetItemId != null).Select(c => c.TargetItemId).ToHashSet();
             foreach (var item in items.Where(i => previousIds?.Contains(i.Id) ?? targets.Contains(i.Id))) Results.SelectedItems.Add(Results.Items.Cast<ResultRow>().First(r => r.Id == item.Id));
             if (!fromClipboard && Results.SelectedItems.Count == 0 && previousIds == null && items[0].YoutubeId == null) Results.SelectedIndex = 0;
             ParseButton.Content = "获取画质…";
             var reference = Results.SelectedItems.Cast<ResultRow>().FirstOrDefault()?.Item;
-            if (reference != null) await SetQualityAsync(reference, previousQuality, ct);
+            if (reference != null && !AudioMode(reference)) await SetQualityAsync(reference, previousQuality, ct);
             else QualityBox.ItemsSource = null;
             DownloadButton.IsEnabled = reference != null;
             return catalogs;
@@ -133,16 +172,18 @@ public sealed partial class HomePage : Page
     private void Recovery(Exception ex)
     {
         var kind = (ex as BiliException)?.Kind;
+        audioRecovery = kind == BiliErrorKind.AudioComponent;
         youtubeRecovery = kind is BiliErrorKind.YoutubeSession or BiliErrorKind.YoutubeComponent;
         LoginButton.Visibility = AuthRecovery.NeedsLogin(kind, App.Services.Bili.SessionState) ? Visibility.Visible : Visibility.Collapsed;
         ComponentButton.Visibility = youtubeRecovery ? Visibility.Visible : Visibility.Collapsed;
+        if (kind == BiliErrorKind.AudioComponent) { ComponentButton.Content = "安装 / 配置 FFmpeg"; ComponentButton.Visibility = Visibility.Visible; return; }
         ComponentButton.Content = kind == BiliErrorKind.YoutubeSession ? "管理 YouTube 会话" : "安装 YouTube 组件";
     }
     private async Task SetQualityAsync(MediaItem item, int? preferred, CancellationToken ct)
     {
         if (!estimates.TryGetValue(item.Id, out var variants)) variants = await App.Services.Media.GetVariantsAsync(item, ct);
         ct.ThrowIfCancellationRequested();
-        if (variants.Count == 0) throw new BiliException("当前没有可用的兼容画质。");
+
         estimates[item.Id] = variants;
         updatingQuality = true;
         try {
@@ -180,29 +221,37 @@ public sealed partial class HomePage : Page
     private async void Download_Click(object sender, RoutedEventArgs e) => await DownloadSelectedAsync(false);
     private async Task DownloadSelectedAsync(bool navigate)
     {
-        if (QualityBox.SelectedItem is not MediaVariant quality || Results.SelectedItems.Count == 0) { Show("请选择至少一个条目。", InfoBarSeverity.Warning); return; }
-        var selected = Results.SelectedItems.Cast<ResultRow>().Select(r => r.Item).ToArray(); DownloadButton.IsEnabled = false;
+        var selected = Results.SelectedItems.Cast<ResultRow>().Select(r => r.Item).ToArray();
+        if (selected.Length == 0) return;
+        DownloadButton.IsEnabled = false;
         try
         {
-            try { await MediaDownloader.CheckFfmpegAsync(App.Services.ResolveFfmpeg(), default); }
-            catch (Exception) { youtubeRecovery = false; ComponentButton.Content = "安装 / 配置 FFmpeg"; ComponentButton.Visibility = Visibility.Visible; Show("FFmpeg 不可用，请在设置中安装组件或配置工具后，再点击下载。原链接和选择已保留。", InfoBarSeverity.Warning); return; }
-            if (App.Main.IsExiting) return;
-            var pending = new List<(MediaItem Item, MediaVariant Variant)>();
+            var pending = new List<(MediaItem Item, int Quality, string? Format, AudioOutput? Audio)>();
             foreach (var item in selected) {
-                if (!estimates.TryGetValue(item.Id, out var variants)) variants = await App.Services.Media.GetVariantsAsync(item);
-                var actual = AtMost(variants, quality, item) ?? throw new BiliException("所选画质下没有兼容格式：" + item.Title);
-                pending.Add((item, actual));
+                if (AudioMode(item)) {
+                    var audio = await AudioForAsync(item, default);
+                    if(audio.Track.Mixed && navigate) { Show(audio.Summary + "，请确认后下载。", InfoBarSeverity.Warning); return; }
+                    await AudioExporter.CheckAsync(App.Services.ResolveFfmpeg(), audio, default);
+                    pending.Add((item,0,audio.Track.Id,audio));
+                } else {
+                    try { await MediaDownloader.CheckFfmpegAsync(App.Services.ResolveFfmpeg(), default); }
+                    catch (BiliException) { throw new BiliException("请在设置中安装 FFmpeg 后重试。", BiliErrorKind.AudioComponent); }
+                    if (QualityBox.SelectedItem is not MediaVariant quality) throw new BiliException("请选择可用画质，或切换到音频。");
+                    if (!estimates.TryGetValue(item.Id,out var variants)) variants = await App.Services.Media.GetVariantsAsync(item);
+                    var actual = AtMost(variants, quality, item) ?? throw new BiliException("所选画质下没有兼容格式：" + item.Title);
+                    pending.Add((item,item.YoutubeId == null && quality.FormatId == null ? quality.Quality : actual.Quality,actual.FormatId,null));
+                }
             }
-            foreach (var (item, actual) in pending)
-                await App.Services.Queue.AddAsync([item], item.YoutubeId == null && quality.FormatId == null ? quality.Quality : actual.Quality, App.Services.Settings.DownloadDirectory,
-                    new Dictionary<string, string> { [item.Id] = FileNaming.Render(item, App.Services.Settings.FileNameTemplate, names.GetValueOrDefault(item.Id)) }, actual.FormatId);
+            if (App.Main.IsExiting) return;
+            foreach(var task in pending) await App.Services.Queue.AddAsync([task.Item],task.Quality,App.Services.Settings.DownloadDirectory,
+                new Dictionary<string,string> { [task.Item.Id] = NameFor(task.Item) },task.Format,task.Audio);
             Show("已加入下载队列", InfoBarSeverity.Success);
             if (navigate) App.Main.OpenQueue();
         }
         catch (Exception ex) { Recovery(ex); Show(ex is BiliException ? ex.Message : "任务保存失败，请检查本地目录权限。", InfoBarSeverity.Error); }
         finally { DownloadButton.IsEnabled = true; }
     }
-    private void Component_Click(object sender, RoutedEventArgs e) { if (youtubeRecovery) App.Main.OpenYoutubeSettings(); else App.Main.OpenSettings(); }
+    private void Component_Click(object sender, RoutedEventArgs e) { if (youtubeRecovery) App.Main.OpenYoutubeSettings(); else if(audioRecovery) App.Main.OpenAudioSettings(); else App.Main.OpenSettings(); }
     private void SelectAll_Click(object sender, RoutedEventArgs e) => Results.SelectAll();
     private void SelectNone_Click(object sender, RoutedEventArgs e) => Results.SelectedItems.Clear();
     private async void Estimate_Changed(object sender, SelectionChangedEventArgs e) {
@@ -210,29 +259,37 @@ public sealed partial class HomePage : Page
         estimating?.Cancel();
         using var request = new CancellationTokenSource(); estimating = request; var ct = request.Token;
         var selected = Results.SelectedItems.Cast<ResultRow>().ToArray();
-        foreach (var row in Results.Items.Cast<ResultRow>().Except(selected)) row.SizeText = "";
-        SizeSummary.Visibility = selected.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
-        SizeSummary.Text = selected.Length == 0 ? "" : "正在估算选中内容的大小…";
-        long total = 0; var unknown = 0;
+        var anyAudio = resolvedItems.Any(AudioMode);
+        ExportBox.Visibility = anyAudio ? Visibility.Visible : Visibility.Collapsed;
+        RateBox.Visibility = anyAudio && ExportBox.SelectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
+        QualityBox.Visibility = resolvedItems.Any(i => !AudioMode(i)) ? Visibility.Visible : Visibility.Collapsed;
+        foreach(var row in Results.Items.Cast<ResultRow>()) {
+            row.AudioVisibility = AudioMode(row.Item) ? Visibility.Visible : Visibility.Collapsed;
+            row.FileName = NameFor(row.Item); row.SizeText = "";
+        }
+        SizeSummary.Visibility = selected.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        SizeSummary.Text = "正在估算选中内容的大小…"; DownloadButton.IsEnabled = false;
+        long total = 0; var unknown = 0; bool ready = true;
         try {
-            if (selected.Length == 0) { DownloadButton.IsEnabled = false; return; }
-            var reference = selected[0].Item;
-            if (qualityReference != reference.Id) await SetQualityAsync(reference, (QualityBox.SelectedItem as MediaVariant)?.Quality, ct);
-            if (QualityBox.SelectedItem is not MediaVariant quality) return;
-            DownloadButton.IsEnabled = true;
-            foreach (var row in selected) {
-                row.SizeText = "正在估算…";
-                if (!estimates.TryGetValue(row.Id, out var variants)) {
-                    try { variants = await App.Services.Media.GetVariantsAsync(row.Item, ct); ct.ThrowIfCancellationRequested(); estimates[row.Id] = variants; }
-                    catch (OperationCanceledException) { throw; }
-                    catch { row.SizeText = "大小未知"; unknown++; continue; }
+            if(selected.Length == 0) return;
+            var reference = selected.FirstOrDefault(row => !AudioMode(row.Item))?.Item;
+            if(reference != null && qualityReference != reference.Id) await SetQualityAsync(reference, (QualityBox.SelectedItem as MediaVariant)?.Quality, ct);
+            foreach(var row in selected) {
+                long? bytes;
+                if(AudioMode(row.Item)) {
+                    var audio = await AudioForAsync(row.Item,ct);
+                    row.AudioChoice = trackIds.ContainsKey(row.Id) ? "音质：" + audio.Track.Codec : "音质：自动最高";
+                    row.SizeText = audio.Summary; row.FileName = NameFor(row.Item); bytes = audio.EstimatedBytes;
+                } else {
+                    if(!estimates.TryGetValue(row.Id,out var variants)) { variants = await App.Services.Media.GetVariantsAsync(row.Item,ct); ct.ThrowIfCancellationRequested(); estimates[row.Id] = variants; }
+                    var actual = QualityBox.SelectedItem is MediaVariant limit ? AtMost(variants,limit,row.Item) : null;
+                    row.SizeText = actual == null ? "无兼容画质，可选择音频" : actual.DisplayLabel;
+                    ready &= actual != null; bytes = actual?.EstimatedBytes;
                 }
-                ct.ThrowIfCancellationRequested();
-                var actual = AtMost(variants, quality, row.Item);
-                row.SizeText = actual == null ? "此画质上限无可用视频" : actual.Label + "  " + MediaSize.Format(actual.EstimatedBytes);
-                if (actual?.EstimatedBytes is > 0) total += actual.EstimatedBytes.Value; else unknown++;
+                if(bytes is > 0) total += bytes.Value; else unknown++;
             }
-            SizeSummary.Text = selected.Length == 0 ? "" : $"选中 {selected.Length} 项：{MediaSize.Format(total)}" + (unknown > 0 ? $"，另有 {unknown} 项大小未知" : "");
+            DownloadButton.IsEnabled = ready;
+            SizeSummary.Text = $"选中 {selected.Length} 项：{MediaSize.Format(total)}" + (unknown > 0 ? $"，另有 {unknown} 项大小未知" : "");
         } catch (OperationCanceledException) { }
         catch (Exception ex) { DownloadButton.IsEnabled = false; Recovery(ex); RetryButton.Visibility = Visibility.Visible; Show(ex is BiliException ? ex.Message : "无法获取画质，请重试。", InfoBarSeverity.Warning); }
         finally { if (ReferenceEquals(estimating, request)) estimating = null; }

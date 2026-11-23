@@ -21,6 +21,8 @@ public sealed class DownloadTaskViewModel(DownloadTaskData data) : INotifyProper
     public Visibility CancelVisibility => CanCancel ? Visibility.Visible : Visibility.Collapsed;
     public Visibility FileVisibility => CanUseFile ? Visibility.Visible : Visibility.Collapsed;
     public Visibility YoutubeVisibility => Data.State == DownloadState.Failed && Data.FailureKind is BiliErrorKind.YoutubeComponent or BiliErrorKind.YoutubeSession ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility AudioComponentVisibility => Data.State == DownloadState.Failed && Data.FailureKind == BiliErrorKind.AudioComponent ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility TrackChangedVisibility => Data.State == DownloadState.Failed && Data.FailureKind == BiliErrorKind.TrackChanged ? Visibility.Visible : Visibility.Collapsed;
     public Visibility LoginVisibility => Data.State == DownloadState.Failed && AuthRecovery.NeedsLogin(Data.FailureKind, App.Services.Bili.SessionState) ? Visibility.Visible : Visibility.Collapsed;
     public event PropertyChangedEventHandler? PropertyChanged;
     public void Update(DownloadTaskData value) { Data = value; PropertyChanged?.Invoke(this, new(null)); }

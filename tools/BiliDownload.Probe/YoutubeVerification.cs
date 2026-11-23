@@ -25,14 +25,26 @@ internal static class YoutubeVerification
         var media = new MediaRouter(bili, engine, () => false);
         using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(6));
         var catalogs = await media.ResolveAsync(args[4], timeout.Token);
-        var item = catalogs.Single().Items.Single();
-        var variants = catalogs.Single().InitialVariants!;
-        var variant = variants.Where(v => v.Height <= int.Parse(args[5])).MaxBy(v => v.Height)!;
-        Console.WriteLine($"Resolved {item.Id}: {variant.Label}, format {variant.FormatId}, {variant.EstimatedBytes} bytes");
-        var queue = new DownloadQueue(media, new TaskStore(root), Path.Combine(root, "cache"), () => Path.Combine(app, "tools", "ffmpeg.exe"));
+        var catalog = catalogs.Single();
+        var item = catalog.Items.First(i => catalog.TargetItemId == null || i.Id == catalog.TargetItemId);
+        var isAudio = args[0] == "--verify-audio";
+        var tool = isAudio ? Path.GetFullPath(args[6]) : Path.Combine(app, "tools", "ffmpeg.exe");
+        var queue = new DownloadQueue(media, new TaskStore(root), Path.Combine(root, "cache"), () => tool);
         await using (queue)
         {
-            await queue.AddAsync([item], variant.Quality, Path.Combine(root, "output"), new Dictionary<string,string> { [item.Id] = FileNaming.Render(item) }, variant.FormatId);
+            if(isAudio) {
+                var tracks = await media.AudioAsync(item,timeout.Token);
+                var track = args.Length > 7 ? tracks.First(t => t.Codec.Equals(args[7],StringComparison.OrdinalIgnoreCase)) : tracks.First();
+                var selection = new AudioOutput(track,int.Parse(args[5]));
+                var name = FileNaming.Render(item,extension:selection.Extension);
+                Console.WriteLine($"Audio {item.Id}: {track.Codec}, {track.Bitrate} kb/s, transfer={track.DownloadBytes}, mixed={track.Mixed}");
+                await queue.AddAsync([item],0,Path.Combine(root,"output"), new Dictionary<string,string> { [item.Id] = name },track.Id,selection);
+            } else {
+                var variants = catalogs.Single().InitialVariants!;
+                var variant = variants.Where(v => v.Height <= int.Parse(args[5])).MaxBy(v => v.Height)!;
+                Console.WriteLine($"Resolved {item.Id}: {variant.Label}, format {variant.FormatId}, {variant.EstimatedBytes} bytes");
+                await queue.AddAsync([item],variant.Quality,Path.Combine(root,"output"),new Dictionary<string,string> { [item.Id] = FileNaming.Render(item) }, variant.FormatId);
+            }
             while (true)
             {
                 var task = queue.Snapshot().First(t => t.Item.Id == item.Id);

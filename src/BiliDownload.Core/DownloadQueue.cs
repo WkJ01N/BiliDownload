@@ -32,15 +32,15 @@ public sealed class DownloadQueue : IAsyncDisposable
         workers = Enumerable.Range(0, 2).Select(_ => Task.Run(WorkerAsync)).ToArray();
     }
     public IReadOnlyList<DownloadTaskData> Snapshot() { lock (sync) return tasks.Values.OrderByDescending(t => t.CreatedAt).ToArray(); }
-    public async Task AddAsync(IEnumerable<MediaItem> items, int quality, string directory, IReadOnlyDictionary<string, string>? fileNames = null, string? formatId = null)
+    public async Task AddAsync(IEnumerable<MediaItem> items, int quality, string directory, IReadOnlyDictionary<string, string>? fileNames = null, string? formatId = null, AudioOutput? audio = null)
     {
         foreach (var item in items)
         {
             DownloadTaskData data;
             lock (sync)
             {
-                if (tasks.Values.Any(t => t.Item.Id == item.Id && t.Quality == quality && t.State is not (DownloadState.Canceled or DownloadState.Failed))) continue;
-                data = new(Guid.NewGuid(), item, quality, directory, CreatedAt: DateTimeOffset.UtcNow, OutputFileName: fileNames != null && fileNames.TryGetValue(item.Id, out var name) ? FileNaming.Normalize(name) : null, FormatId: formatId);
+                if (tasks.Values.Any(t => (t.Item.YoutubeId ?? t.Item.Id) == (item.YoutubeId ?? item.Id) && t.Quality == quality && t.AudioOutput?.Track.Id == audio?.Track.Id && t.AudioOutput?.Mp3Kbps == audio?.Mp3Kbps && t.State is not (DownloadState.Canceled or DownloadState.Failed))) continue;
+                data = new(Guid.NewGuid(), item, quality, directory, CreatedAt: DateTimeOffset.UtcNow, OutputFileName: fileNames != null && fileNames.TryGetValue(item.Id, out var name) ? FileNaming.Normalize(name, audio?.Extension ?? ".mp4") : null, FormatId: formatId, AudioOutput: audio);
                 tasks.Add(data.Id, data); revisions[data.Id] = 0; executionGates[data.Id] = new(1);
                 store.SaveAsync(data).GetAwaiter().GetResult();
             }
@@ -115,7 +115,8 @@ public sealed class DownloadQueue : IAsyncDisposable
                     {
                         var ct = token.Token;
                         var executable = ffmpeg();
-                        await MediaDownloader.CheckFfmpegAsync(executable, ct);
+                        if (item.AudioOutput is { } output) await AudioExporter.CheckAsync(executable, output, ct);
+                        else await MediaDownloader.CheckFfmpegAsync(executable, ct);
                         Directory.CreateDirectory(item.Directory);
                         var work = Path.Combine(cache, id.ToString("N")); Directory.CreateDirectory(work);
                         await UpdateAsync(id, revision, t => t with { State = DownloadState.Downloading, Message = "获取媒体源" });
@@ -125,7 +126,7 @@ public sealed class DownloadQueue : IAsyncDisposable
                         {
                             if (media is not MediaRouter router) throw new BiliException("请安装 YouTube 下载组件。", BiliErrorKind.YoutubeComponent);
                             var tracks = await router.FetchAsync(item, work, fraction => UpdateAsync(id, revision, t => t with {
-                                Progress = fraction * 95, Message = "正在下载 YouTube 视频" }, false).GetAwaiter().GetResult(), ct);
+                                Progress = fraction * 95, Message = item.AudioOutput == null ? "正在下载 YouTube 视频" : "正在下载音轨" }, false).GetAwaiter().GetResult(), ct);
                             videoFiles = tracks.Video; audioFile = tracks.Audio; actualQuality = tracks.Quality;
                             await UpdateAsync(id, revision, t => t with { FormatId = tracks.Format });
                         }
@@ -134,7 +135,9 @@ public sealed class DownloadQueue : IAsyncDisposable
                         {
                             try
                             {
-                                var plan = await media.GetPlanAsync(item.Item, item.Quality, ct);
+                                var plan = item.AudioOutput is { } audio
+                                    ? await (media as IAudioPlanSource ?? throw new BiliException("当前来源未提供音轨。")).AudioPlanAsync(item.Item, audio, ct)
+                                    : await media.GetPlanAsync(item.Item, item.Quality, ct);
                                 actualQuality = plan.Variant.Quality;
                                 var parts = plan.Video.Concat(plan.Audio is { } a ? [a] : []).ToArray();
                                 var files = new List<string>(); videoFiles = files; audioFile = null;
@@ -161,9 +164,10 @@ public sealed class DownloadQueue : IAsyncDisposable
                             }
                         }
                         ct.ThrowIfCancellationRequested();
-                        await UpdateAsync(id, revision, t => t with { State = DownloadState.Merging, Progress = 96, Message = "合并音视频" });
-                        var temporary = Path.Combine(work, "merged.mp4");
-                        await MediaDownloader.MergeAsync(executable, videoFiles, audioFile, temporary, ct);
+                        await UpdateAsync(id, revision, t => t with { State = DownloadState.Merging, Progress = 96, Message = item.AudioOutput == null ? "合并音视频" : "处理音频" });
+                        var temporary = Path.Combine(work, "merged" + (item.AudioOutput?.Extension ?? ".mp4"));
+                        if (item.AudioOutput is { } export) await AudioExporter.ExportAsync(executable, videoFiles, export, item.Item, temporary, ct);
+                        else await MediaDownloader.MergeAsync(executable, videoFiles, audioFile, temporary, ct);
                         ct.ThrowIfCancellationRequested();
                         var filename = item.OutputFileName ?? (LinkParser.SafeName($"{item.Item.Title} P{item.Item.Index} {item.Item.PartTitle}") +
                             $" [{item.Item.Id.Replace(':', '-')}-{actualQuality}].mp4");

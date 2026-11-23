@@ -10,6 +10,8 @@
      <StackPanel Spacing="10"><TextBlock Text="{Binding Item.Title}" FontWeight="SemiBold" TextWrapping="Wrap"/><TextBlock Text="{Binding PartTitle}" Foreground="{ThemeResource RadixSecondaryTextBrush}" TextWrapping="Wrap"/><TextBlock Text="{Binding FileName}" TextWrapping="Wrap" Foreground="{ThemeResource RadixSecondaryTextBrush}"/><ProgressBar Value="{Binding Progress}" Maximum="100"/><TextBlock Text="{Binding Message}" TextWrapping="Wrap"/>
       <CommandBar DefaultLabelPosition="Right" IsDynamicOverflowEnabled="True" HorizontalAlignment="Stretch" Background="Transparent">
        <AppBarButton Label="登录 B 站" Tag="{x:Bind}" Visibility="{x:Bind LoginVisibility, Mode=OneWay}" Click="Login_Click" Icon="Contact"/>
+       <AppBarButton Label="音频组件" Visibility="{x:Bind AudioComponentVisibility, Mode=OneWay}" Click="AudioSettings_Click" Icon="Setting"/>
+       <AppBarButton Label="重选音轨" Tag="{x:Bind}" Visibility="{x:Bind TrackChangedVisibility, Mode=OneWay}" Click="AudioTrack_Click" Icon="Audio"/>
        <AppBarButton Label="YouTube 设置" Visibility="{x:Bind YoutubeVisibility, Mode=OneWay}" Click="YoutubeSettings_Click" Icon="Setting"/>
        <AppBarButton Label="暂停" Tag="{x:Bind}" Visibility="{x:Bind PauseVisibility, Mode=OneWay}" Click="Pause_Click" Icon="Pause"/>
        <AppBarButton Label="继续 / 重试" Tag="{x:Bind}" Visibility="{x:Bind ResumeVisibility, Mode=OneWay}" Click="Resume_Click" Icon="Refresh"/>

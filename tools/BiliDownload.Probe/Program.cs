@@ -1,7 +1,8 @@
 using BiliDownload.Core;
 using System.Text.Json;
 
-if (args.FirstOrDefault() == "--verify-youtube") return await YoutubeVerification.RunAsync(args);
+if (args.FirstOrDefault() == "--verify-audio-files") return await AudioVerification.RunAsync(args);
+if (args.FirstOrDefault() is "--verify-youtube" or "--verify-audio") return await YoutubeVerification.RunAsync(args);
 
 if (args.FirstOrDefault() == "--verify-components")
 {

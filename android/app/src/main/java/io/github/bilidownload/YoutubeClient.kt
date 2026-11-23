@@ -14,13 +14,13 @@ import java.util.UUID
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-data class PlaylistPage(val id: String, val start: Int)
-data class YoutubeCatalog(val items: List<MediaItem>, val target: String? = null, val more: PlaylistPage? = null, val variants: List<Variant>? = null)
+data class PlaylistPage(val id: String, val start: Int, val music: Boolean = false)
+data class YoutubeCatalog(val items: List<MediaItem>, val target: String? = null, val more: PlaylistPage? = null, val variants: List<Variant>? = null, val audio: List<AudioTrack>? = null)
 
 class YoutubeClient(private val context: Context, val session: Session) {
     companion object {
         const val PACKAGE = "io.github.bilidownload.youtube"
-        const val APK = "https://github.com/WkJ01N/BiliDownload/releases/download/v0.2.0/BiliDownload-0.2.0-youtube.apk"
+        const val APK = "https://github.com/WkJ01N/BiliDownload/releases/download/v0.3.0/BiliDownload-0.3.0-youtube.apk"
     }
     fun installation(): String = try {
         val info = context.packageManager.getPackageInfo(PACKAGE, 0)
@@ -79,6 +79,8 @@ class YoutubeClient(private val context: Context, val session: Session) {
         "Restricted" -> BiliException("YouTube 暂时限制了请求，请稍后重试。")
         "Protected" -> BiliException("此视频受 DRM 保护，无法保存为 MP4。")
         "Live" -> BiliException("直播尚未结束，请在回放发布后重试。")
+        "TrackChanged" -> BiliException("所选音轨已不可用，请重新解析并选择音质。", BiliErrorKind.TrackChanged)
+        "NoAudio" -> BiliException("当前没有可下载的音轨。")
         "NoFormat" -> BiliException("没有符合画质上限的 H.264 和 AAC 格式。")
         "Engine" -> component("YouTube 扩展无法运行，请检查扩展版本。")
         "Network" -> BiliException("无法连接 YouTube 媒体服务，请检查网络后重试。")
@@ -88,6 +90,8 @@ class YoutubeClient(private val context: Context, val session: Session) {
         val id = UUID.randomUUID().toString()
         val cookies = session.get()
         if (cookies.isNotEmpty()) json.put("cookies", cookies)
+        if (json.optString("mode") == "audio" && context.packageManager.getPackageInfo(PACKAGE, 0).longVersionCode < 8)
+            throw component("请更新 YouTube 扩展以下载音频。")
         val owner = Binder()
         val pipe = remote.run(id, task, json.toString(), owner)
         val cancel = launch(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
@@ -111,36 +115,39 @@ class YoutubeClient(private val context: Context, val session: Session) {
     private suspend fun metadata(request: JSONObject): JSONObject = withEngine { remote ->
         withTimeoutOrNull(120_000) { execute(remote, request) } ?: throw BiliException("YouTube 响应超时，请重试。")
     }
-    private fun item(json: JSONObject, playlist: String? = null): MediaItem {
+    private fun item(json: JSONObject, playlist: String? = null, music: Boolean = false): MediaItem {
         val id = json.getString("id"); val title = json.getString("title")
-        return MediaItem("yt:$id", title, title, "video", 0, "", 0, 0, json.getInt("index"), json.getString("cover"), 1, id, playlist)
+        return MediaItem(if(music) "ytm:$id" else "yt:$id", title, title, "video", 0, "", 0, 0, json.getInt("index"), json.getString("cover"), 1, id, playlist, music)
     }
-    private suspend fun inspect(id: String) = metadata(JSONObject().put("op", "inspect").put("id", id))
+    private suspend fun inspect(id: String, music: Boolean = false, audio: Boolean = music) = metadata(JSONObject().put("op", "inspect").put("id", id).put("music", music).put("mode", if(audio) "audio" else "video"))
+    suspend fun audio(item: MediaItem) = if(item.youtubeId == null) BiliApplication.api.audio(item).map { it.first } else AudioMedia.youtube(inspect(item.youtubeId, item.music, true))
     private fun choices(info: JSONObject) = info.getJSONArray("variants").objects().map {
         Variant(it.getInt("height"), "${it.getInt("height")}p", it.optLong("bytes").takeIf { bytes -> bytes > 0 }, it.getString("format"))
     }
     suspend fun variants(item: MediaItem) = if (item.youtubeId == null) BiliApplication.api.variants(item) else choices(inspect(item.youtubeId))
     suspend fun page(cursor: PlaylistPage): YoutubeCatalog {
-        val info = metadata(JSONObject().put("op", "playlist").put("id", cursor.id).put("start", cursor.start))
-        return YoutubeCatalog(info.getJSONArray("items").objects().map { item(it, cursor.id) },
-            more = info.getInt("next").takeIf { it > cursor.start }?.let { PlaylistPage(cursor.id, it) })
+        val info = metadata(JSONObject().put("op", "playlist").put("id", cursor.id).put("start", cursor.start).put("music", cursor.music))
+        return YoutubeCatalog(info.getJSONArray("items").objects().map { item(it, cursor.id, cursor.music) },
+            more = info.getInt("next").takeIf { it > cursor.start }?.let { PlaylistPage(cursor.id, it, cursor.music) })
     }
     suspend fun resolve(link: YoutubeLink, expand: Boolean): YoutubeCatalog {
         if (link.playlist != null && (link.video == null || expand)) {
-            var page = page(PlaylistPage(link.playlist, 1))
+            var page = page(PlaylistPage(link.playlist, 1, link.music))
             val items = page.items.toMutableList()
             while (page.more != null && (items.isEmpty() || link.video != null && items.none { it.youtubeId == link.video })) {
                 page = page(page.more!!); items.addAll(page.items)
             }
-            if (link.video != null && items.none { it.youtubeId == link.video }) items += item(inspect(link.video))
-            return YoutubeCatalog(items, link.video?.let { "yt:$it" }, page.more)
+            if (link.video != null && items.none { it.youtubeId == link.video }) items += item(inspect(link.video, link.music), music = link.music)
+            return YoutubeCatalog(items, link.video?.let { if(link.music) "ytm:$it" else "yt:$it" }, page.more)
         }
-        val info = inspect(requireNotNull(link.video)); val item = item(info)
-        return YoutubeCatalog(listOf(item), item.id, variants = choices(info))
+        val info = inspect(requireNotNull(link.video), link.music); val item = item(info, music = link.music)
+        return YoutubeCatalog(listOf(item), item.id, variants = if(link.music) null else choices(info), audio = if(link.music) AudioMedia.youtube(info) else null)
     }
     suspend fun fetch(entry: DownloadEntry, dir: File, progress: (Float) -> Unit): Pair<File, File?> = withEngine { remote ->
         val result = execute(remote, JSONObject().put("op", "fetch").put("id", entry.item.youtubeId)
-            .put("height", entry.quality).put("format", entry.formatId), entry.id, progress)
+            .put("height", entry.quality).put("format", entry.audioOutput?.track?.id ?: entry.formatId)
+            .put("mode", if(entry.audioOutput != null) "audio" else "video").put("music", entry.item.music)
+            .put("mixed", entry.audioOutput?.track?.mixed ?: false), entry.id, progress)
         suspend fun copy(audio: Boolean): File {
             val file = File(dir, if (audio) "audio.track" else "video.track")
             val job = currentCoroutineContext()
@@ -152,7 +159,7 @@ class YoutubeClient(private val context: Context, val session: Session) {
             }
             return file
         }
-        val tracks = copy(false) to if (result.getBoolean("audio")) copy(true) else null
+        val tracks = if(entry.audioOutput != null) copy(true) to null else copy(false) to if (result.getBoolean("audio")) copy(true) else null
         BiliApplication.store.update(entry.id) { it.copy(formatId = result.getString("format")) }
         tracks
     }
