@@ -5,7 +5,10 @@
   },
   "ffmpeg.tar.gz": {
     "url": "https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/5c4f5744cd",
-    "sha256": "a34b707c67140a37ddd11c5475fa09135301a7c667f1d78c5702d544bba6ce77"
+    "sha256": "a34b707c67140a37ddd11c5475fa09135301a7c667f1d78c5702d544bba6ce77",
+    "archiveUrl": "https://github.com/WkJ01N/BiliDownload/releases/download/v0.1.2/ffmpeg-minimal-win-x64.zip",
+    "archiveSha256": "d6d207338b2f33beb39b671796109592ad324ae8860373f23fcadf1628168fb4",
+    "member": "FFmpeg-source.tar.gz"
   },
   "android-taglib.tar.gz": {
     "url": "https://codeload.github.com/Kyant0/taglib/tar.gz/9919e210e23e3594e56efea78bc88d9afe6a54d3",

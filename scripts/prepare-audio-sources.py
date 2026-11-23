@@ -19,9 +19,17 @@ with zipfile.ZipFile(out / "audio-component-sources.zip", "w", zipfile.ZIP_DEFLA
         source = cache / name
         if not source.exists() or hashlib.sha256(source.read_bytes()).hexdigest() != pin["sha256"]:
             with tempfile.NamedTemporaryFile(dir=cache, delete=False) as temp:
-                with urllib.request.urlopen(pin["url"], timeout=90) as response:
+                with urllib.request.urlopen(pin.get("archiveUrl",pin["url"]), timeout=90) as response:
                     shutil.copyfileobj(response, temp)
             downloaded = Path(temp.name)
+            if "member" in pin:
+                if hashlib.sha256(downloaded.read_bytes()).hexdigest() != pin["archiveSha256"]:
+                    raise ValueError("Outer archive checksum mismatch: " + name)
+                with zipfile.ZipFile(downloaded) as bundle, tempfile.NamedTemporaryFile(dir=cache, delete=False) as member:
+                    with bundle.open(pin["member"]) as stream:
+                        shutil.copyfileobj(stream, member)
+                downloaded.unlink()
+                downloaded = Path(member.name)
             if hashlib.sha256(downloaded.read_bytes()).hexdigest() != pin["sha256"]:
                 raise ValueError("Checksum mismatch: " + name)
             downloaded.replace(source)

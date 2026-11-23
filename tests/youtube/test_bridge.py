@@ -142,3 +142,10 @@ class EngineTests(unittest.TestCase):
                 with self.assertRaisesRegex(bridge.EngineError,"TrackChanged"):
                     bridge.fetch_tracks(MagicMock(),self.info,choices,stale,path,lambda **k: None)
         self.assertEqual(visited,["140"])
+
+    def test_mixed_prefers_smaller_picture_for_identical_audio(self):
+        base = dict(self.video,acodec="mp4a",abr=128)
+        high = dict(base,format_id="large",filesize=50000,quality=12)
+        small = dict(base,format_id="small",filesize=3000,quality=1)
+        self.assertEqual(bridge.audio_choices(dict(self.info,formats=[small,high]))[0][0]["format"],"small")
+        self.assertEqual(bridge.byte_size({"abr":128,"vcodec":"none"},10),160000)

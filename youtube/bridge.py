@@ -58,7 +58,8 @@ def byte_size(fmt, duration):
     for key in ("filesize", "filesize_approx"):
         if (fmt.get(key) or 0) > 0:
             return int(fmt[key])
-    estimate = (fmt.get("tbr") or 0) * (duration or 0) * 125
+    bitrate = fmt.get("tbr") or (fmt.get("abr") if fmt.get("vcodec") == "none" else 0) or 0
+    estimate = bitrate * (duration or 0) * 125
     return math.ceil(estimate) if 0 < estimate < 2**60 else None
 
 
@@ -88,8 +89,48 @@ def compatible(info):
     return [(by_height[h][1], by_height[h][2]) for h in sorted(by_height)]
 
 
+def audio_choices(info):
+    """Return selectable source tracks, best first, with no private URLs in metadata."""
+    rows = []
+    for order, fmt in enumerate(info.get("formats") or []):
+        if fmt.get("has_drm") or not fmt.get("url") or fmt.get("protocol") not in ("https", "http_dash_segments", "m3u8", "m3u8_native"):
+            continue
+        name = (fmt.get("acodec") or "").lower()
+        codec = next((label for prefix, label in (("mp4a", "AAC"), ("aac", "AAC"), ("opus", "Opus"),
+                     ("flac", "FLAC"), ("ec-3", "E-AC-3"), ("eac3", "E-AC-3"), ("mp3", "MP3"))
+                     if name.startswith(prefix)), None)
+        if not codec:
+            continue
+        mixed = fmt.get("vcodec") != "none"
+        rate = fmt.get("abr") or (fmt.get("tbr") if not mixed else None)
+        duration = info.get("duration") or 0
+        size = byte_size(fmt, duration)
+        drc = bool(fmt.get("dynamic_range_compression")) or "drc" in (str(fmt.get("format_id")) + " " + str(fmt.get("format_note"))).lower()
+        row = {"container": fmt.get("ext") or "", "drc": drc, "format": fmt["format_id"], "codec": codec, "bitrate": round(rate or 0),
+               "language": fmt.get("language") or "", "channels": fmt.get("audio_channels") or 0,
+               "duration": duration, "mixed": mixed, "bytes": size,
+               "audioBytes": round(rate * duration * 125) if mixed and rate and duration else None if mixed else size}
+        grade = 0 if mixed else (fmt.get("quality") or 0)
+        rank = (fmt.get("language_preference") or 0, codec == "FLAC", grade, not drc, order)
+        rows.append((rank, row, [fmt]))
+    independent = [r for r in rows if not r[1]["mixed"]]
+    available = independent or rows
+    # Compare bitrates inside a codec. Across codecs follow the extractor's quality order.
+    codec_order = {}
+    for rank, row, _ in available:
+        key = (rank[:-1], row["codec"])
+        codec_order[key] = max(codec_order.get(key, -1), rank[-1])
+    def score(entry):
+        rank, row, _ = entry
+        if row["mixed"]:
+            return (*rank[:-1], row["bitrate"], -(row["bytes"] or float("inf")), rank[-1])
+        return (*rank[:-1], codec_order[(rank[:-1], row["codec"])], row["bitrate"], rank[-1])
+    return [(r, tracks) for _, r, tracks in sorted(available, key=score, reverse=True)]
+
+
 def entry(info, index=1):
     return {"id": info["id"], "title": info.get("title") or info["id"], "index": index,
+            "artist": info.get("artist") or "", "album": info.get("album") or "", "trackTitle": info.get("track") or "",
             "cover": "https://i.ytimg.com/vi/" + info["id"] + "/mqdefault.jpg"}
 
 
@@ -116,14 +157,22 @@ def checkpoint(info, fmt):
 
 
 def fetch_tracks(ydl, info, choices, request, work, report):
-    candidates = [c for c in choices if c[0]["height"] <= request["height"]]
-    if not candidates:
-        raise EngineError("NoFormat")
-    choice, formats = next((c for c in candidates if c[0]["format"] == request.get("format")), candidates[-1])
+    audio_only = request.get("mode") == "audio"
+    if audio_only:
+        selected = next((c for c in choices if c[0]["format"] == request.get("format")
+                         and c[0]["mixed"] == request.get("mixed", False)), None)
+        if not selected:
+            raise EngineError("TrackChanged")
+        choice, formats = selected
+    else:
+        candidates = [c for c in choices if c[0]["height"] <= request["height"]]
+        if not candidates:
+            raise EngineError("NoFormat")
+        choice, formats = next((c for c in candidates if c[0]["format"] == request.get("format")), candidates[-1])
     for index, fmt in enumerate(formats):
         # Both filenames are fixed. A changed or unverifiable stream starts
         # fresh even when the old signed URL happened to use the same itag.
-        track = work / ("audio.track" if index else "video.track")
+        track = work / ("audio.track" if index or audio_only else "video.track")
         marker = track.with_suffix(".checkpoint")
         identity = checkpoint(info, fmt)
         try:
@@ -160,7 +209,7 @@ def fetch_tracks(ydl, info, choices, request, work, report):
         ok, _ = downloader.download(str(track), data)
         if not ok or not track.is_file() or not track.stat().st_size:
             raise EngineError("Network")
-    return {"audio": len(formats) == 2, "format": choice["format"], "height": choice["height"]}
+    return {"audio": audio_only or len(formats) == 2, "format": choice["format"], "height": choice.get("height", 0), "tags": entry(info)}
 
 
 def execute(request, qjs, work):
@@ -170,6 +219,9 @@ def execute(request, qjs, work):
     if operation not in ("playlist", "inspect", "fetch") or not (PLAYLIST if listing else VIDEO).fullmatch(identifier):
         raise EngineError("InvalidLink")
     url = ("https://www.youtube.com/playlist?list=" if listing else "https://www.youtube.com/watch?v=") + identifier
+    if request.get("music"):
+        url = url.replace("www.youtube.com", "music.youtube.com")
+    audio_only = request.get("mode") == "audio"
     start = max(1, int(request.get("start", 1)))
     opts = {"quiet": True, "no_warnings": True, "logger": QuietLogger(), "cachedir": False,
             "socket_timeout": 12, "retries": 2, "extractor_retries": 1, "fragment_retries": 2,
@@ -178,23 +230,27 @@ def execute(request, qjs, work):
             "extract_flat": "in_playlist", "playlist_items": f"{start}:{start + PAGE_SIZE}",
             "noplaylist": not listing}
     cookies = request.get("cookies")
-    for authenticated in (False, True):
+    for authenticated in ((True,) if audio_only and cookies else (False, True)):
         try:
             with ydl_module.YoutubeDL(opts) as ydl:
                 if authenticated:
                     ydl.cookiejar.load(io.StringIO(cookies), ignore_expires=False)
                 info = ydl.extract_info(url, download=False)
+                if authenticated and opts["logger"].invalid_session:
+                    raise EngineError("SessionExpired")
                 if listing:
                     return playlist_page(info, start)
                 if info.get("live_status") in ("is_live", "is_upcoming", "post_live"):
                     raise EngineError("Live")
-                choices = compatible(info)
+                choices = audio_choices(info) if audio_only else compatible(info)
+                if operation == "inspect" and not audio_only and not choices and audio_choices(info):
+                    return dict(entry(info), variants=[])
                 if not choices:
                     if info.get("availability") in ("subscriber_only", "needs_auth", "private"):
                         raise EngineError("Membership" if authenticated else "SessionRequired")
                     if any(f.get("has_drm") for f in info.get("formats", [])):
                         raise EngineError("Protected")
-                    raise EngineError("NoFormat")
+                    raise EngineError("NoAudio" if audio_only else "NoFormat")
                 if operation == "inspect":
                     return dict(entry(info), variants=[choice for choice, _ in choices])
                 return fetch_tracks(ydl, info, choices, request, work, emit)

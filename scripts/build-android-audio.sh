@@ -7,14 +7,22 @@ out="$root/android/audio/build/generated/jniLibs"
 mkdir -p "$cache" "$out"
 fetch() {
   local path="$1" url="$2" digest="$3"
-  if ! echo "$digest  $path" | sha256sum -c --status; then
+  if [[ ! -f "$path" ]] || ! echo "$digest  $path" | sha256sum -c --status; then
     curl --retry 3 -fLsS "$url" -o "$path.part"
     echo "$digest  $path.part" | sha256sum -c --status
     mv "$path.part" "$path"
   fi
 }
 fetch "$cache/lame-3.100.tar.gz" https://deb.debian.org/debian/pool/main/l/lame/lame_3.100.orig.tar.gz ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e
-fetch "$cache/ffmpeg.tar.gz" https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/5c4f5744cd a34b707c67140a37ddd11c5475fa09135301a7c667f1d78c5702d544bba6ce77
+# GitHub can regenerate upstream tarball headers. The project's immutable component
+# contains the exact original archive used to build the Windows FFmpeg component.
+ffmpeg_sha=a34b707c67140a37ddd11c5475fa09135301a7c667f1d78c5702d544bba6ce77
+if [[ ! -f "$cache/ffmpeg.tar.gz" ]] || ! echo "$ffmpeg_sha  $cache/ffmpeg.tar.gz" | sha256sum -c --status; then
+  fetch "$cache/ffmpeg-minimal.zip" https://github.com/WkJ01N/BiliDownload/releases/download/v0.1.2/ffmpeg-minimal-win-x64.zip d6d207338b2f33beb39b671796109592ad324ae8860373f23fcadf1628168fb4
+  python -c 'import shutil,sys,zipfile; z=zipfile.ZipFile(sys.argv[1]); src=z.open("FFmpeg-source.tar.gz"); dst=open(sys.argv[2],"wb"); shutil.copyfileobj(src,dst); dst.close()' "$cache/ffmpeg-minimal.zip" "$cache/ffmpeg.tar.gz.part"
+  echo "$ffmpeg_sha  $cache/ffmpeg.tar.gz.part" | sha256sum -c --status
+  mv "$cache/ffmpeg.tar.gz.part" "$cache/ffmpeg.tar.gz"
+fi
 ndk="${ANDROID_NDK_HOME:-${ANDROID_HOME:?}/ndk/28.2.13676358}"
 host=linux-x86_64
 if command -v cygpath >/dev/null; then ndk="$(cygpath -u "$ndk")"; host=windows-x86_64; fi
