@@ -3,7 +3,7 @@ plugins { id("com.android.application") }
 android {
     namespace = "io.github.bilidownload.youtube"
     compileSdk = 36
-    defaultConfig { applicationId = "io.github.bilidownload.youtube"; minSdk = 29; targetSdk = 36; versionCode = 8; versionName = "0.3.0" }
+    defaultConfig { applicationId = "io.github.bilidownload.youtube"; minSdk = 29; targetSdk = 36; versionCode = 9; versionName = "0.3.0" }
     buildFeatures { aidl = true }
     sourceSets["main"].aidl.srcDir("../protocol")
     sourceSets["main"].assets.srcDir("build/generated/engine/assets")
@@ -13,7 +13,7 @@ android {
 }
 
 val prepareEngine = tasks.register<Exec>("prepareEngine") {
-    inputs.files("../../youtube/bridge.py", "../../scripts/prepare-youtube.py", "../../packaging/youtube.json")
+    inputs.files("../../youtube/bridge.py", "../../youtube/xpost.py", "../../scripts/prepare-youtube.py", "../../packaging/youtube.json")
     outputs.dir(layout.buildDirectory.dir("generated/engine"))
     workingDir("../..")
     commandLine("python", "scripts/prepare-youtube.py", "android")

@@ -103,7 +103,7 @@ public sealed class MediaDownloader : IDisposable
         await RunAsync(ffmpeg, args, ct);
         if (!File.Exists(output) || new FileInfo(output).Length == 0) throw new BiliException("合并未生成有效文件。");
     }
-    internal static async Task RunAsync(string executable, IEnumerable<string> arguments, CancellationToken ct)
+    internal static async Task RunAsync(string executable, IEnumerable<string> arguments, CancellationToken ct, bool requireAudio = false)
     {
         using var process = new Process { StartInfo = new ProcessStartInfo(executable) {
             UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true, RedirectStandardOutput = true } };
@@ -112,7 +112,10 @@ public sealed class MediaDownloader : IDisposable
         using var registration = ct.Register(() => { try { if (!process.HasExited) process.Kill(true); } catch (InvalidOperationException) { } });
         var errors = process.StandardError.ReadToEndAsync(ct);
         var output = process.StandardOutput.ReadToEndAsync(ct);
-        await process.WaitForExitAsync(ct); await output; await errors;
+        await process.WaitForExitAsync(ct); await output;
+        var diagnostic = await errors;
+        if (process.ExitCode != 0 && requireAudio && diagnostic.Contains("matches no streams", StringComparison.OrdinalIgnoreCase))
+            throw new BiliException("此视频没有音轨，可返回解析页保存视频。", BiliErrorKind.NoAudio);
         // Do not surface stderr: it can contain signed source URLs or local sensitive paths.
         if (process.ExitCode != 0) throw new BiliException("FFmpeg 处理失败，请确认媒体源完整、目标目录可写且 FFmpeg 可运行。");
     }

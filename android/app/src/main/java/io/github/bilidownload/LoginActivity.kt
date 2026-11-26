@@ -39,7 +39,7 @@ class LoginActivity : ComponentActivity() {
                 Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
                     Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         TextButton(onClick = { setResult(RESULT_CANCELED); finish() }) { Text("返回") }
-                        Button(enabled = !verifying, onClick = { scope.launch {
+                        FilledTonalButton(enabled = !verifying, onClick = { scope.launch {
                             verifying = true
                             try {
                                 val cookie = CookieManager.getInstance().getCookie("https://www.bilibili.com/").orEmpty()

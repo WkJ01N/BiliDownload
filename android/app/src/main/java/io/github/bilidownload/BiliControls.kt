@@ -24,7 +24,7 @@ import androidx.compose.ui.unit.dp
         ProvideTextStyle(MaterialTheme.typography.bodyMedium) { label() }
         OutlinedTextField(value, onValueChange, minLines = minLines, maxLines = maxLines,
             modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused }
-                .border(0.5.dp, if(focused) radixFocusColor() else colors.outline, RoundedCornerShape(4.dp)),
+                .border(0.5.dp, if(focused) colors.primary else colors.outline, RoundedCornerShape(4.dp)),
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color.Transparent,
                 unfocusedBorderColor = Color.Transparent, disabledBorderColor = Color.Transparent, errorBorderColor = Color.Transparent))
     }
@@ -35,19 +35,19 @@ import androidx.compose.ui.unit.dp
     HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
 }
 
-@Composable fun BiliCheckbox(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+@Composable fun BiliCheckbox(checked: Boolean, onCheckedChange: (Boolean) -> Unit, enabled: Boolean = true) {
     val colors = MaterialTheme.colorScheme
-    Box(Modifier.size(48.dp).toggleable(value = checked, role = Role.Checkbox, onValueChange = onCheckedChange), contentAlignment = Alignment.Center) {
-        Box(Modifier.size(18.dp).background(if(checked) colors.primary else colors.surface, RoundedCornerShape(3.dp))
+    Box(Modifier.size(48.dp).toggleable(value = checked, enabled = enabled, role = Role.Checkbox, onValueChange = onCheckedChange), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(18.dp).background(if(checked) colors.secondaryContainer else colors.surface, RoundedCornerShape(3.dp))
             .border(0.5.dp, if(checked) colors.primary else colors.outline, RoundedCornerShape(3.dp)), contentAlignment = Alignment.Center) {
-            if(checked) Icon(painterResource(R.drawable.ic_complete), null, Modifier.size(14.dp), tint = colors.onPrimary)
+            if(checked) Icon(painterResource(R.drawable.ic_complete), null, Modifier.size(14.dp), tint = colors.onSecondaryContainer)
         }
     }
 }
 
 @Composable fun BiliSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     val colors = MaterialTheme.colorScheme
-    Switch(checked, onCheckedChange, colors = SwitchDefaults.colors(checkedThumbColor = colors.onPrimary,
-        checkedTrackColor = colors.primary, checkedBorderColor = Color.Transparent, uncheckedTrackColor = colors.surfaceVariant,
+    Switch(checked, onCheckedChange, colors = SwitchDefaults.colors(checkedThumbColor = colors.onSecondaryContainer,
+        checkedTrackColor = colors.secondaryContainer, checkedBorderColor = Color.Transparent, uncheckedTrackColor = colors.surfaceVariant,
         uncheckedThumbColor = colors.onSurfaceVariant, uncheckedBorderColor = Color.Transparent))
 }

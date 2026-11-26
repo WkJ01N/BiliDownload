@@ -21,6 +21,11 @@ public static class AudioExporter
         return p.ExitCode == 0 && Regex.IsMatch(await output, @"(?m)^\s*\S+\s+" + Regex.Escape(name) + @"\s");
     }
 
+    public static async Task CheckGifAsync(string executable, CancellationToken ct)
+    {
+        if (!await Supports(executable,"-encoders","gif",ct) || !await Supports(executable,"-filters","palettegen",ct) ||
+            !await Supports(executable,"-filters","paletteuse",ct)) throw new BiliException("导出 GIF 需要完整版 FFmpeg，请在设置中安装后重试。", BiliErrorKind.AudioComponent);
+    }
     public static async Task CheckAsync(string executable, AudioOutput output, CancellationToken ct)
     {
         if (output.Mp3Kbps != 0 && (!new[] { 320, 192, 128 }.Contains(output.Mp3Kbps) || !await Supports(executable, "-encoders", "libmp3lame", ct))) throw NeedTool();
@@ -56,8 +61,8 @@ public static class AudioExporter
             if (output.Mp3Kbps > 0) args.AddRange(["-b:a",output.Mp3Kbps+"k","-ac",output.Track.Channels == 1 ? "1" : "2"]);
             if (muxer == "mp4") args.AddRange(["-movflags","+faststart"]);
             args.AddRange(["-f",muxer,path]);
-            try { await MediaDownloader.RunAsync(executable, args, ct); }
-            catch (BiliException) when (output.Track.Mixed || output.Mp3Kbps == 0) { throw new BiliException("音轨封装失败。请确认已安装完整版 FFmpeg，并检查源文件。", BiliErrorKind.AudioComponent); }
+            try { await MediaDownloader.RunAsync(executable, args, ct, requireAudio: item.X != null); }
+            catch (BiliException ex) when (ex.Kind != BiliErrorKind.NoAudio && (output.Track.Mixed || output.Mp3Kbps == 0)) { throw new BiliException("音轨封装失败。请确认已安装完整版 FFmpeg，并检查源文件。", BiliErrorKind.AudioComponent); }
         }
         var tags = output.Track.Tags ?? new MusicTags(item.PartCount > 1 ? item.PartTitle : item.Title, Cover: item.Cover);
         byte[]? image = null;

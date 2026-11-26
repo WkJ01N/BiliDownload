@@ -50,6 +50,7 @@ with zipfile.ZipFile(out / "audio-component-sources.zip", "w", zipfile.ZIP_DEFLA
     files = [root / p for p in ("scripts/build-android-audio.sh", "scripts/prepare-audio-sources.py", "packaging/audio.json", "android/audio/build.gradle.kts", "THIRD_PARTY_NOTICES.md", "LICENSE")]
     files.extend((root / "android/audio/src").rglob("*"))
     files.append(root / "android/protocol/io/github/bilidownload/bridge/IAudioProcessor.aidl")
+    files.append(root / "android/app/src/main/java/io/github/bilidownload/AudioProcessor.kt")
     for path in files:
         if path.is_file():
             archive.write(path, path.relative_to(root).as_posix())

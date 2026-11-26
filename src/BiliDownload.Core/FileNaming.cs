@@ -19,7 +19,7 @@ public static class FileNaming
         if (custom != null) return Normalize(custom, extension);
         Validate(template);
         var part = item.PartTitle.Trim();
-        var name = item.PlaylistId != null ? $"{item.Index:D2} {item.Title}" : item.PartCount > 1 || item.Kind != MediaKind.Video
+        var name = item.X != null ? $"{item.Title} {part}" : item.PlaylistId != null ? $"{item.Index:D2} {item.Title}" : item.PartCount > 1 || item.Kind != MediaKind.Video
             ? $"{item.Title} P{item.Index}" + (part.Length == 0 || part == item.Title.Trim() ? "" : " " + part)
             : item.Title;
         var values = new Dictionary<string, string> { ["name"] = name, ["title"] = item.Title,

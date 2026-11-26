@@ -11,14 +11,14 @@
       <CommandBar DefaultLabelPosition="Right" IsDynamicOverflowEnabled="True" HorizontalAlignment="Stretch" Background="Transparent">
        <AppBarButton Label="登录 B 站" Tag="{x:Bind}" Visibility="{x:Bind LoginVisibility, Mode=OneWay}" Click="Login_Click" Icon="Contact"/>
        <AppBarButton Label="音频组件" Visibility="{x:Bind AudioComponentVisibility, Mode=OneWay}" Click="AudioSettings_Click" Icon="Setting"/>
-       <AppBarButton Label="重选音轨" Tag="{x:Bind}" Visibility="{x:Bind TrackChangedVisibility, Mode=OneWay}" Click="AudioTrack_Click" Icon="Audio"/>
-       <AppBarButton Label="YouTube 设置" Visibility="{x:Bind YoutubeVisibility, Mode=OneWay}" Click="YoutubeSettings_Click" Icon="Setting"/>
+       <AppBarButton Label="{x:Bind ReparseLabel, Mode=OneWay}" Tag="{x:Bind}" Visibility="{x:Bind TrackChangedVisibility, Mode=OneWay}" Click="Reparse_Click" Icon="Refresh"/>
+       <AppBarButton Label="{x:Bind EngineSettingsLabel, Mode=OneWay}" Tag="{x:Bind}" Visibility="{x:Bind YoutubeVisibility, Mode=OneWay}" Click="YoutubeSettings_Click" Icon="Setting"/>
        <AppBarButton Label="暂停" Tag="{x:Bind}" Visibility="{x:Bind PauseVisibility, Mode=OneWay}" Click="Pause_Click" Icon="Pause"/>
        <AppBarButton Label="继续 / 重试" Tag="{x:Bind}" Visibility="{x:Bind ResumeVisibility, Mode=OneWay}" Click="Resume_Click" Icon="Refresh"/>
        <AppBarButton Label="取消" Tag="{x:Bind}" Visibility="{x:Bind CancelVisibility, Mode=OneWay}" Click="Cancel_Click" Icon="Cancel"/>
        <AppBarButton Label="复制文件" Tag="{x:Bind}" Visibility="{x:Bind FileVisibility, Mode=OneWay}" Click="Copy_Click" Icon="Copy"/>
        <AppBarButton Label="文件夹" Tag="{x:Bind}" Visibility="{x:Bind FileVisibility, Mode=OneWay}" Click="Folder_Click" Icon="Folder"/>
-       <AppBarButton Label="播放" Tag="{x:Bind}" Visibility="{x:Bind FileVisibility, Mode=OneWay}" Click="Open_Click" Icon="Play"/>
+       <AppBarButton Label="{x:Bind OpenLabel, Mode=OneWay}" Tag="{x:Bind}" Visibility="{x:Bind FileVisibility, Mode=OneWay}" Click="Open_Click" Icon="Play"/>
        <AppBarButton Label="移除记录" Tag="{x:Bind}" Click="Remove_Click" Icon="Delete"/>
       </CommandBar>
      </StackPanel>

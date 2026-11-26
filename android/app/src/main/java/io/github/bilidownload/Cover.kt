@@ -20,7 +20,7 @@ import kotlinx.coroutines.withContext
                 if(url.isBlank()) return@runCatching null
                 val secure = if(url.startsWith("//")) "https:$url" else url.replaceFirst("http://", "https://")
                 val uri = java.net.URI(secure)
-                val conn = if (uri.host == "i.ytimg.com") (uri.toURL().openConnection() as java.net.HttpURLConnection).apply { connectTimeout = 6000; readTimeout = 8000; instanceFollowRedirects = false }
+                val conn = if (uri.host == "i.ytimg.com" || uri.host == "pbs.twimg.com") (uri.toURL().openConnection() as java.net.HttpURLConnection).apply { connectTimeout = 6000; readTimeout = 8000; instanceFollowRedirects = false }
                     else BiliApplication.api.connection(secure)
                 try { conn.inputStream.use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = 2 })?.asImageBitmap() } }
                 finally { conn.disconnect() }

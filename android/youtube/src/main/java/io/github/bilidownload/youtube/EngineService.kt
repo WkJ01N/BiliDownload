@@ -40,6 +40,7 @@ class EngineService : Service() {
             }
             return target
         }
+        unpack("xpost.py") { assets.open("xpost.py") }
         return Runtime(unpack("bridge.py") { assets.open("bridge.py") },
             unpack("yt-dlp") { resources.openRawResource(R.raw.ytdlp) },
             File(noBackupFilesDir, "youtubedl-android/packages/python/usr"))
@@ -115,7 +116,10 @@ class EngineService : Service() {
         override fun cancel(requestId: String) { checkCaller(); requests[requestId]?.cancel() }
         override fun openTrack(taskId: String, audio: Boolean): ParcelFileDescriptor {
             checkCaller()
-            return ParcelFileDescriptor.open(File(taskDir(taskId), if (audio) "audio.track" else "video.track"), ParcelFileDescriptor.MODE_READ_ONLY)
+            val dir = taskDir(taskId)
+            val track = if (audio) File(dir, "audio.track")
+                else File(dir, "x.track").takeIf(File::isFile) ?: File(dir, "video.track")
+            return ParcelFileDescriptor.open(track, ParcelFileDescriptor.MODE_READ_ONLY)
         }
         override fun clean(taskId: String) {
             checkCaller()

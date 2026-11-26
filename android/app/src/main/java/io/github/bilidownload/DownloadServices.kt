@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap
 object DownloadActions {
     fun schedule(context: Context, entry: DownloadEntry) {
         BiliApplication.store.put(entry.copy(state = "Queued", message = "等待下载", failureKind = null))
+        if(entry.waitsForAttachments(BiliApplication.store.entries.value)) return
         if(Build.VERSION.SDK_INT >= 34) {
             val scheduler = context.getSystemService(JobScheduler::class.java)
             var jobId = entry.id.hashCode() and Int.MAX_VALUE

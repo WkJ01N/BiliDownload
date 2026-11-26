@@ -3,13 +3,15 @@
   <TextBlock Text="设置" Style="{StaticResource TitleTextBlockStyle}"/>
   <Border Background="Transparent" CornerRadius="0" Padding="0"><StackPanel Spacing="12"><TextBlock Text="B 站账号" Style="{StaticResource SubtitleTextBlockStyle}"/><TextBlock x:Name="AccountStatus" Text="未登录" TextWrapping="Wrap"/><StackPanel Orientation="Horizontal" Spacing="10"><Button x:Name="AccountLoginButton" Content="扫码登录" Click="Login_Click"/><Button x:Name="AccountLogoutButton" Visibility="Collapsed" Content="退出登录" Click="Logout_Click"/></StackPanel></StackPanel></Border>
   <StackPanel Spacing="8"><TextBlock Text="YouTube 会话" Style="{StaticResource SubtitleTextBlockStyle}"/><TextBlock x:Name="YoutubeStatus"/><StackPanel Orientation="Horizontal" Spacing="8"><Button x:Name="YoutubeImport" Content="导入 cookies.txt" Click="YoutubeImport_Click"/><Button x:Name="YoutubeRemove" Content="移除会话" Click="YoutubeRemove_Click"/></StackPanel></StackPanel>
-  <TextBox x:Name="DirectoryBox" Header="视频保存目录"/><Button Content="选择保存目录" HorizontalAlignment="Left" Click="Directory_Click"/>
+  <StackPanel Spacing="8"><TextBlock Text="X 会话" Style="{StaticResource SubtitleTextBlockStyle}"/><TextBlock x:Name="XStatus"/><StackPanel Orientation="Horizontal" Spacing="8"><Button x:Name="XImport" Content="导入 cookies.txt" Click="YoutubeImport_Click"/><Button x:Name="XRemove" Content="移除会话" Click="YoutubeRemove_Click"/></StackPanel></StackPanel>
+  <ComboBox x:Name="XLayout" Header="X 帖子保存方式" HorizontalAlignment="Left"><ComboBoxItem Content="按帖子建文件夹"/><ComboBoxItem Content="按文件类型分类"/></ComboBox>
+  <TextBox x:Name="DirectoryBox" Header="保存目录"/><Button Content="选择保存目录" HorizontalAlignment="Left" Click="Directory_Click"/>
   <Border Background="Transparent" CornerRadius="0" Padding="0"><StackPanel Spacing="12">
    <TextBlock Text="组件管理" Style="{StaticResource SubtitleTextBlockStyle}"/>
 
    <TextBlock x:Name="ComponentStatus" TextWrapping="Wrap"/>
-   <ComboBox x:Name="ComponentChoice" Header="下载组件" HorizontalAlignment="Stretch" DisplayMemberPath="Name" SelectionChanged="ComponentChoice_Changed"/>
-   <Button x:Name="CheckYoutube" Content="检查 YouTube 组件更新" Visibility="Collapsed" Click="CheckYoutube_Click"/>
+   <ComboBox x:Name="ComponentChoice" Header="下载组件" HorizontalAlignment="Stretch" DisplayMemberPath="DisplayName" SelectionChanged="ComponentChoice_Changed"/>
+   <Button x:Name="CheckYoutube" Content="检查组件更新" Visibility="Collapsed" Click="CheckYoutube_Click"/>
    <TextBlock x:Name="ComponentSize" TextWrapping="Wrap" Foreground="{ThemeResource RadixSecondaryTextBrush}"/>
    <StackPanel Orientation="Horizontal" Spacing="8"><Button x:Name="InstallComponent" Content="下载 / 使用" Click="InstallComponent_Click"/><Button x:Name="CancelComponent" Content="取消下载" IsEnabled="False" Click="CancelComponent_Click"/></StackPanel>
    <StackPanel Orientation="Horizontal" Spacing="8"><Button x:Name="RemoveComponent" Content="移除组件" Click="RemoveComponent_Click"/><Button x:Name="BundledComponent" Content="恢复默认工具" Click="UseBundled_Click"/></StackPanel>
@@ -37,7 +39,7 @@
   <ComboBox x:Name="ThemeBox" Header="外观" SelectedValuePath="Tag"><ComboBoxItem Content="跟随系统" Tag="Default"/><ComboBoxItem Content="浅色" Tag="Light"/><ComboBoxItem Content="深色" Tag="Dark"/></ComboBox>
   <Button Content="保存设置" Style="{StaticResource AccentButtonStyle}" Click="Save_Click"/>
   <InfoBar x:Name="Notice" IsOpen="False"/>
-  <TextBlock Text="BiliDownload  Windows 预览版 0.3.0" Foreground="{ThemeResource RadixSecondaryTextBrush}"/>
+  <TextBlock Text="BiliDownload  Windows 预览版 0.4.0" Foreground="{ThemeResource RadixSecondaryTextBrush}"/>
   <HyperlinkButton Content="GitHub 仓库" NavigateUri="https://github.com/WkJ01N/BiliDownload" Padding="0,8" HorizontalAlignment="Left"/>
  </StackPanel></ScrollViewer>
 </Page>

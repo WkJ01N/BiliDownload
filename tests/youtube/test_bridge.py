@@ -65,11 +65,51 @@ class EngineTests(unittest.TestCase):
         with self.assertRaisesRegex(bridge.EngineError, "SessionExpired"):
             self.call([Exception("Sign in"), Exception("Sign in")])
     def test_restriction_and_drm(self):
-        for message, code in [("HTTP 429", "Restricted"), ("Sign in to confirm you're not a bot","Restricted"), ("DRM protected","Protected")]:
+        for message, code in [("HTTP 429: Sign in to confirm you're not a bot", "Restricted"),
+                              ("Confirm you're not a robot", "Restricted"), ("DRM protected", "Protected"),
+                              ("This live event will begin in 2 hours", "Live")]:
             with self.assertRaisesRegex(bridge.EngineError, code):
                 self.call([Exception(message)])
-        with self.assertRaisesRegex(bridge.EngineError, "Live"):
-            self.call([dict(self.info, live_status="is_live")])
+
+    def test_explicit_verification_uses_existing_session_once(self):
+        challenge = Exception("Sign in to confirm you're not a bot")
+        with self.assertRaisesRegex(bridge.EngineError, "VerifyAccount"):
+            self.call([challenge], cookies=None)
+        _, client = self.call([challenge, self.info])
+        client.cookiejar.load.assert_called_once()
+        self.assertEqual(client.extract_info.call_count, 2)
+        with self.assertRaisesRegex(bridge.EngineError, "VerifyAccount"):
+            self.call([challenge, challenge])
+
+    def test_replay_inspects_and_fetches_selected_tracks(self):
+        module = MagicMock()
+        client = module.YoutubeDL.return_value.__enter__.return_value
+        vid = "N2rr3OXrR8s"
+        client.extract_info.return_value = dict(self.info, id=vid, live_status="was_live")
+        with patch.object(bridge, "ydl_module", module, create=True), patch.object(bridge, "fetch_tracks") as fetch:
+            for mode, formats in [("video", ["137", "140"]), ("audio", ["140"])]:
+                with self.subTest(mode=mode):
+                    request = dict(op="inspect", id=vid, mode=mode)
+                    result = bridge.execute(request, "qjs", Path.cwd())
+                    self.assertEqual(result["id"], vid)
+                    variant, = result["variants"]
+                    self.assertEqual(variant["format"], "+".join(formats))
+                    bridge.execute(dict(request, op="fetch", **variant), "qjs", Path.cwd())
+                    client.extract_info.assert_called_with("https://www.youtube.com/watch?v=" + vid, download=False)
+                    selected, = fetch.call_args.args[2]
+                    self.assertEqual([track["format_id"] for track in selected[1]], formats)
+
+    def test_unpublished_replay_cannot_start_download(self):
+        module = MagicMock()
+        client = module.YoutubeDL.return_value.__enter__.return_value
+        with patch.object(bridge, "ydl_module", module, create=True), patch.object(bridge, "fetch_tracks") as fetch:
+            for status, code in [("is_live", "Live"), ("is_upcoming", "Live"), ("post_live", "ReplayProcessing")]:
+                client.extract_info.return_value = dict(self.info, live_status=status)
+                for op in ("inspect", "fetch"):
+                    with self.subTest(status=status, op=op), self.assertRaisesRegex(bridge.EngineError, code):
+                        bridge.execute(dict(op=op, id=self.info["id"]), "qjs", Path.cwd())
+            fetch.assert_not_called()
+
     def test_refresh_identity(self):
         self.assertEqual(bridge.checkpoint(self.info, self.video), bridge.checkpoint(self.info, dict(self.video,url=self.video["url"]+"&expire=42")))
         self.assertNotEqual(bridge.checkpoint(self.info, self.video), bridge.checkpoint(self.info, self.audio))

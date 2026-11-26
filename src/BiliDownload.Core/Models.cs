@@ -3,7 +3,7 @@ namespace BiliDownload.Core;
 public enum MediaKind { Video, Bangumi, Course }
 public record MediaItem(string Id, string Title, string PartTitle, string Cover, MediaKind Kind,
     long Aid, string Bvid, long Cid, long EpisodeId, int Index, string PageUrl, int PartCount = 1,
-    string? YoutubeId = null, string? PlaylistId = null, bool Music = false);
+    string? YoutubeId = null, string? PlaylistId = null, bool Music = false, XAttachment? X = null);
 public record MediaCatalog(string Title, IReadOnlyList<MediaItem> Items, string? TargetItemId = null, PlaylistCursor? More = null,
     IReadOnlyList<MediaVariant>? InitialVariants = null, IReadOnlyList<AudioTrack>? InitialAudio = null);
 public record MediaVariant(int Quality, string Label, int Height, string Codec, long? EstimatedBytes = null, string? FormatId = null) {
@@ -17,8 +17,8 @@ public record DownloadTaskData(Guid Id, MediaItem Item, int Quality, string Dire
     string? FilePath = null, DateTimeOffset CreatedAt = default, BiliErrorKind? FailureKind = null, string? OutputFileName = null, string? FinalFileName = null, string? FormatId = null, AudioOutput? AudioOutput = null);
 public record AppSettings(string DownloadDirectory, string FfmpegPath = "ffmpeg",
     bool DetectOnActivate = false, bool MonitorClipboard = true, string Theme = "Default",
-    bool AutoDownloadOnNotificationClick = true, bool ExpandRelatedItems = false, int ClipboardBehaviorVersion = 0, string FileNameTemplate = "{name}", string CloseBehavior = "Ask");
-public enum BiliErrorKind { Unknown, LoginRequired, RequestRestricted, YoutubeSession, YoutubeComponent, AudioComponent, TrackChanged }
+    bool AutoDownloadOnNotificationClick = true, bool ExpandRelatedItems = false, int ClipboardBehaviorVersion = 0, string FileNameTemplate = "{name}", string CloseBehavior = "Ask", bool XSortByType = false);
+public enum BiliErrorKind { Unknown, LoginRequired, RequestRestricted, YoutubeSession, YoutubeComponent, AudioComponent, TrackChanged, XSession, XComponent, NoAudio }
 public enum SessionState { Guest, Saved, Authenticated, Expired }
 public enum LoginOutcome { Success, Canceled, Failed }
 public record LoginResult(LoginOutcome Outcome, string? Message = null);

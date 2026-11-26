@@ -20,7 +20,10 @@ public sealed class DownloadTaskViewModel(DownloadTaskData data) : INotifyProper
     public Visibility ResumeVisibility => CanResume ? Visibility.Visible : Visibility.Collapsed;
     public Visibility CancelVisibility => CanCancel ? Visibility.Visible : Visibility.Collapsed;
     public Visibility FileVisibility => CanUseFile ? Visibility.Visible : Visibility.Collapsed;
-    public Visibility YoutubeVisibility => Data.State == DownloadState.Failed && Data.FailureKind is BiliErrorKind.YoutubeComponent or BiliErrorKind.YoutubeSession ? Visibility.Visible : Visibility.Collapsed;
+    public string OpenLabel => Item.X?.Kind is "image" or "markdown" || Item.X?.ExportGif == true ? "打开文件" : "播放";
+    public string ReparseLabel => Item.X == null || Data.AudioOutput != null ? "重选音轨" : "重新解析";
+    public string EngineSettingsLabel => Data.FailureKind == BiliErrorKind.XSession ? "X 会话" : Data.FailureKind == BiliErrorKind.XComponent ? "下载组件" : "YouTube 设置";
+    public Visibility YoutubeVisibility => Data.State == DownloadState.Failed && Data.FailureKind is BiliErrorKind.YoutubeComponent or BiliErrorKind.YoutubeSession or BiliErrorKind.XComponent or BiliErrorKind.XSession ? Visibility.Visible : Visibility.Collapsed;
     public Visibility AudioComponentVisibility => Data.State == DownloadState.Failed && Data.FailureKind == BiliErrorKind.AudioComponent ? Visibility.Visible : Visibility.Collapsed;
     public Visibility TrackChangedVisibility => Data.State == DownloadState.Failed && Data.FailureKind == BiliErrorKind.TrackChanged ? Visibility.Visible : Visibility.Collapsed;
     public Visibility LoginVisibility => Data.State == DownloadState.Failed && AuthRecovery.NeedsLogin(Data.FailureKind, App.Services.Bili.SessionState) ? Visibility.Visible : Visibility.Collapsed;

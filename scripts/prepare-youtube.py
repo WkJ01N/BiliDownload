@@ -78,12 +78,28 @@ def android():
     shutil.copyfile(get("yt-dlp"), raw / "ytdlp")
     assets = gen / "assets"
     assets.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(ROOT / "youtube/bridge.py", assets / "bridge.py")
+    for name in ("bridge.py", "xpost.py"):
+        shutil.copyfile(ROOT / "youtube" / name, assets / name)
     for name, data in licenses().items():
         dest = assets / "licenses" / name
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(data)
     shutil.copyfile(get("android-LICENSE.txt"), assets / "licenses/Android-GPL.txt")
+
+def android_main():
+    assets = ROOT / "android/app/build/generated/media-assets"
+    engine = assets / "engine"
+    engine.mkdir(parents=True, exist_ok=True)
+    for name in ("bridge.py", "xpost.py"):
+        shutil.copyfile(ROOT / "youtube" / name, engine / name)
+    (engine / "media-component.json").write_text(json.dumps(PINS["yt-dlp"]), encoding="utf-8")
+    for name, data in licenses().items():
+        dest = assets / "licenses" / name
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+    shutil.copyfile(get("android-LICENSE.txt"), assets / "licenses/Android-runtime-GPL.txt")
+    for name, source in (("FFmpeg-LGPL.txt", "ffmpeg/COPYING.LGPLv2.1"), ("LAME-COPYING.txt", "lame/COPYING")):
+        shutil.copyfile(ROOT / ".build/audio/arm64-v8a" / source, assets / "licenses" / name)
 
 def sources():
     names = [n for n in PINS if n.endswith((".tar.gz", ".tar.xz", ".jar", ".txt", ".md"))]
@@ -92,11 +108,14 @@ def sources():
         for file in (ROOT / folder).rglob("*"):
             if file.is_file() and "__pycache__" not in file.parts:
                 entries[file.relative_to(ROOT).as_posix()] = file.read_bytes()
-    for file in ("android/youtube/build.gradle.kts", "scripts/prepare-youtube.py", "LICENSE"):
+    for file in ("android/youtube/build.gradle.kts", "android/app/build.gradle.kts",
+                 "android/app/src/main/java/io/github/bilidownload/LocalMediaEngine.kt",
+                 "android/app/src/main/java/io/github/bilidownload/MediaComponents.kt",
+                 "scripts/prepare-youtube.py", "LICENSE"):
         entries[file] = (ROOT / file).read_bytes()
     entries["dependencies.json"] = (ROOT / "packaging/youtube.json").read_bytes()
     entries["THIRD_PARTY_NOTICES.md"] = (ROOT / "THIRD_PARTY_NOTICES.md").read_bytes()
     write_zip(OUT / "youtube-component-sources.zip", entries)
 
 if __name__ == "__main__":
-    {"windows": windows, "android": android, "sources": sources}[sys.argv[1]]()
+    {"windows": windows, "android": android, "android-main": android_main, "sources": sources}[sys.argv[1]]()

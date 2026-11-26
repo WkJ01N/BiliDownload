@@ -9,6 +9,7 @@ public class YoutubeTests
     [Theory]
     [InlineData("https://youtu.be/jNQXAC9IVRw?si=test")]
     [InlineData("https://m.youtube.com/shorts/jNQXAC9IVRw/")]
+    [InlineData("https://m.youtube.com/live/jNQXAC9IVRw/")]
     [InlineData("https://www.youtube.com/watch?v=jNQXAC9IVRw&t=10")]
     public void SharedLinksHaveOneVideoIdentity(string url)
     {
@@ -21,7 +22,18 @@ public class YoutubeTests
     [InlineData("https://youtube.com:8080/watch?v=jNQXAC9IVRw")]
     [InlineData("https://youtube.com/channel/UC000000000")]
     [InlineData("https://youtube.com/watch?v=bad")]
+    [InlineData("https://www.youtube.com/live/?list=PLtest")]
+    [InlineData("https://www.youtube.com/live/not-a-video-id")]
+    [InlineData("https://www.youtube.com/live/N2rr3OXrR8s/extra")]
     public void InvalidLinksAreIgnored(string url) => Assert.Empty(ClipboardPolicy.Links(url));
+
+    [Fact] public void LiveReplayShareUsesTheWatchIdentity()
+    {
+        const string share = "https://www.youtube.com/live/N2rr3OXrR8s?si=Wn4JMg9g1UfVRoMg";
+        const string watch = "https://www.youtube.com/watch?v=N2rr3OXrR8s";
+        Assert.Equal(watch, Assert.Single(ClipboardPolicy.Links($"回放 {share} {watch}")));
+        Assert.Equal(watch + "&list=PLtest", YoutubeLink.Parse(new Uri(share + "&list=PLtest"))!.Canonical);
+    }
 
     [Fact] public void PlaylistAndVideoArePreserved()
     {

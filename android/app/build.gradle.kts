@@ -1,15 +1,29 @@
+import java.security.MessageDigest
+import java.util.zip.ZipFile
+
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.plugin.compose") }
+val mediaRuntime by configurations.creating { isTransitive = false }
+val runtimeOutput = layout.buildDirectory.dir("generated/media-libs")
+val mediaAssets = layout.buildDirectory.dir("generated/media-assets")
+val audioLibraries = rootProject.layout.projectDirectory.dir("audio/build/generated/jniLibs")
+
 android {
     namespace = "io.github.bilidownload"
     compileSdk = 36
-    defaultConfig { applicationId = "io.github.bilidownload"; minSdk = 29; targetSdk = 36; versionCode = 8; versionName = "0.3.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
-    buildFeatures { compose = true; aidl = true }
+    defaultConfig { applicationId = "io.github.bilidownload"; minSdk = 29; targetSdk = 36; versionCode = 11; versionName = "0.4.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
+    buildFeatures { compose = true }
     sourceSets["androidTest"].assets.srcDir("build/generated/audioFixtures")
-    sourceSets["main"].aidl.srcDir("../protocol")
+    sourceSets["main"].assets.srcDir(mediaAssets.get().asFile)
+    sourceSets["main"].jniLibs.srcDirs(runtimeOutput.get().asFile, audioLibraries.asFile)
+    packaging {
+        jniLibs.useLegacyPackaging = true
+        jniLibs.keepDebugSymbols += "**/libpython.zip.so"
+    }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     buildTypes { release { isMinifyEnabled = false } }
 }
 dependencies {
+    mediaRuntime("io.github.junkfood02.youtubedl-android:library:0.18.1@aar")
     implementation(platform("androidx.compose:compose-bom:2025.08.01"))
     implementation("androidx.activity:activity-compose:1.12.1")
     implementation("androidx.compose.material3:material3")
@@ -26,3 +40,42 @@ dependencies {
     testImplementation("org.json:json:20250517")
     testImplementation("junit:junit:4.13.2")
 }
+
+val prepareMediaRuntime by tasks.registering {
+    inputs.files(mediaRuntime)
+    inputs.dir(audioLibraries)
+    outputs.dir(runtimeOutput)
+    doLast {
+        val aar = mediaRuntime.singleFile
+        val checksum = MessageDigest.getInstance("SHA-256").digest(aar.readBytes())
+            .joinToString("") { "%02x".format(it) }
+        check(checksum == "579b5fb480892b1abc2b218c2089699d52759cc8d7ba256bf876453f0365faef") {
+            "Unexpected Android media runtime checksum"
+        }
+        val root = runtimeOutput.get().asFile
+        ZipFile(aar).use { zip ->
+            for (abi in listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")) {
+                check(audioLibraries.file("$abi/libaudio-ffmpeg.so").asFile.length() > 0) {
+                    "Build the media processor first with scripts/build-android-audio.sh ($abi)"
+                }
+                for (name in listOf("libpython.so", "libpython.zip.so", "libqjs.so")) {
+                    val dst = root.resolve("$abi/$name")
+                    dst.parentFile.mkdirs()
+                    val entry = checkNotNull(zip.getEntry("jni/$abi/$name"))
+                    zip.getInputStream(entry).use { input -> dst.outputStream().use(input::copyTo) }
+                }
+            }
+        }
+    }
+}
+
+val prepareMediaAssets by tasks.registering(Exec::class) {
+    inputs.files("../../youtube/bridge.py", "../../youtube/xpost.py", "../../scripts/prepare-youtube.py",
+        "../../packaging/youtube.json", "../../.build/audio/arm64-v8a/ffmpeg/COPYING.LGPLv2.1",
+        "../../.build/audio/arm64-v8a/lame/COPYING")
+    outputs.dir(mediaAssets)
+    workingDir("../..")
+    commandLine("python", "scripts/prepare-youtube.py", "android-main")
+}
+
+tasks.named("preBuild") { dependsOn(prepareMediaRuntime, prepareMediaAssets) }

@@ -13,7 +13,7 @@ object FileNaming {
         if(custom != null) return normalize(custom, extension)
         validate(template)
         val part = item.partTitle.trim()
-        val name = if (item.playlistId != null) item.index.toString().padStart(2, '0') + " " + item.title else if(item.partCount > 1 || item.kind != "video") "${item.title} P${item.index}" + if(part.isBlank() || part == item.title.trim()) "" else " $part" else item.title
+        val name = if (item.x != null) "${item.x.handle}-${item.x.postId}" + if(item.x.document == null) "-${item.index}" else "" else if (item.playlistId != null) item.index.toString().padStart(2, '0') + " " + item.title else if(item.partCount > 1 || item.kind != "video") "${item.title} P${item.index}" + if(part.isBlank() || part == item.title.trim()) "" else " $part" else item.title
         val values = mapOf("name" to name, "title" to item.title, "part" to item.partTitle, "index" to item.index.toString(), "bvid" to item.bvid, "id" to (item.youtubeId ?: item.id))
         return normalize(token.replace(template) { values.getValue(it.groupValues[1]) }, extension)
     }

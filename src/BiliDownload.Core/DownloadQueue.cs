@@ -11,6 +11,7 @@ public sealed class DownloadQueue : IAsyncDisposable
     private readonly string cache;
     private readonly object sync = new();
     private readonly Dictionary<Guid, DownloadTaskData> tasks = new();
+    private readonly Dictionary<Guid,int> waitingForAttachments = new();
     private readonly Dictionary<Guid, int> revisions = new();
     private readonly Dictionary<Guid, SemaphoreSlim> executionGates = new();
     private readonly Dictionary<Guid, CancellationTokenSource> running = new();
@@ -39,8 +40,8 @@ public sealed class DownloadQueue : IAsyncDisposable
             DownloadTaskData data;
             lock (sync)
             {
-                if (tasks.Values.Any(t => (t.Item.YoutubeId ?? t.Item.Id) == (item.YoutubeId ?? item.Id) && t.Quality == quality && t.AudioOutput?.Track.Id == audio?.Track.Id && t.AudioOutput?.Mp3Kbps == audio?.Mp3Kbps && t.State is not (DownloadState.Canceled or DownloadState.Failed))) continue;
-                data = new(Guid.NewGuid(), item, quality, directory, CreatedAt: DateTimeOffset.UtcNow, OutputFileName: fileNames != null && fileNames.TryGetValue(item.Id, out var name) ? FileNaming.Normalize(name, audio?.Extension ?? ".mp4") : null, FormatId: formatId, AudioOutput: audio);
+                if (tasks.Values.Any(t => t.Item.X?.OutputExtension == item.X?.OutputExtension && (t.Item.YoutubeId ?? t.Item.Id) == (item.YoutubeId ?? item.Id) && t.Quality == quality && t.AudioOutput?.Track.Id == audio?.Track.Id && t.AudioOutput?.Mp3Kbps == audio?.Mp3Kbps && t.State is not (DownloadState.Canceled or DownloadState.Failed))) continue;
+                data = new(Guid.NewGuid(), item, quality, directory, CreatedAt: DateTimeOffset.UtcNow, OutputFileName: fileNames != null && fileNames.TryGetValue(item.Id, out var name) ? FileNaming.Normalize(name, audio?.Extension ?? item.X?.OutputExtension ?? ".mp4") : null, FormatId: formatId, AudioOutput: audio);
                 tasks.Add(data.Id, data); revisions[data.Id] = 0; executionGates[data.Id] = new(1);
                 store.SaveAsync(data).GetAwaiter().GetResult();
             }
@@ -60,8 +61,9 @@ public sealed class DownloadQueue : IAsyncDisposable
             revision = ++revisions[id];
             if (running.Remove(id, out var token)) token.Cancel();
             data = old with { State = state, FailureKind = null, Message = state switch { DownloadState.Paused => "已暂停", DownloadState.Canceled => "已取消", _ => "等待下载" } };
-            tasks[id] = data;
+            tasks[id] = data; waitingForAttachments.Remove(id);
             store.SaveAsync(data).GetAwaiter().GetResult();
+            if (state != DownloadState.Queued) WakeDocuments(id);
         }
         Changed?.Invoke();
         if (state == DownloadState.Queued) channel.Writer.TryWrite((id, revision));
@@ -80,6 +82,16 @@ public sealed class DownloadQueue : IAsyncDisposable
             finally { execution.Release(); }
         }
     }
+    // Called under sync when an attachment settles. Waiting documents do not occupy a worker.
+    private void WakeDocuments(Guid attachment)
+    {
+        foreach (var (id, revision) in waitingForAttachments.ToArray()) {
+            if (tasks.TryGetValue(id, out var doc) && doc.Item.X?.Related?.Contains(attachment.ToString()) == true) {
+                waitingForAttachments.Remove(id);
+                channel.Writer.TryWrite((id, revision));
+            }
+        }
+    }
     private async Task UpdateAsync(Guid id, int revision, Func<DownloadTaskData, DownloadTaskData> update, bool persist = true)
     {
         DownloadTaskData data;
@@ -89,6 +101,7 @@ public sealed class DownloadQueue : IAsyncDisposable
             data = update(tasks[id]); tasks[id] = data;
             // Serialize persistent state transitions before a newer pause/resume can be persisted.
             if (persist) store.SaveAsync(data).GetAwaiter().GetResult();
+            if (data.State is DownloadState.Completed or DownloadState.Failed) WakeDocuments(id);
         }
         Changed?.Invoke(); await Task.CompletedTask;
     }
@@ -107,22 +120,56 @@ public sealed class DownloadQueue : IAsyncDisposable
                 lock (sync)
                 {
                     if (revisions[id] != revision || !tasks.ContainsKey(id) || tasks[id].State != DownloadState.Queued) continue;
-                    item = tasks[id]; token = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token); running[id] = token;
+                    item = tasks[id];
+                    if (item.Item.X?.Related is { Length: > 0 } dependencies && dependencies.Any(key =>
+                        Guid.TryParse(key,out var dependency) && tasks.TryGetValue(dependency,out var task) &&
+                        task.State is DownloadState.Downloading or DownloadState.Merging or DownloadState.Queued)) {
+                        waitingForAttachments[id] = revision;
+                        continue;
+                    }
+                    token = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token); running[id] = token;
                 }
                 using (token)
                 {
                     try
                     {
                         var ct = token.Token;
-                        var executable = ffmpeg();
+                        var related = item.Item.X?.Related ?? [];
+                        var executable = item.Item.X != null && item.AudioOutput == null && !item.Item.X.ExportGif ? "" : ffmpeg();
                         if (item.AudioOutput is { } output) await AudioExporter.CheckAsync(executable, output, ct);
-                        else await MediaDownloader.CheckFfmpegAsync(executable, ct);
+                        else if (item.Item.X?.ExportGif == true) await AudioExporter.CheckGifAsync(executable, ct);
+                        else if (item.Item.X == null) await MediaDownloader.CheckFfmpegAsync(executable, ct);
                         Directory.CreateDirectory(item.Directory);
                         var work = Path.Combine(cache, id.ToString("N")); Directory.CreateDirectory(work);
                         await UpdateAsync(id, revision, t => t with { State = DownloadState.Downloading, Message = "获取媒体源" });
                         var actualQuality = item.Quality;
                         IReadOnlyList<string> videoFiles = []; string? audioFile = null;
-                        if (item.Item.YoutubeId != null)
+                        var temporary = Path.Combine(work, "merged" + (item.AudioOutput?.Extension ?? item.Item.X?.OutputExtension ?? ".mp4"));
+                        if (item.Item.X is {} x) {
+                            if (x.Kind == "markdown") {
+                                var markdown = x.Markdown ?? throw new BiliException("帖子正文不可用，请重新解析。");
+                                var linked = Snapshot().Where(t => related.Contains(t.Id.ToString()) && t.State == DownloadState.Completed &&
+                                    t.Directory == item.Directory && t.FilePath != null && File.Exists(t.FilePath)).OrderBy(t => t.Item.Index);
+                                foreach (var t in linked) {
+                                    var name = Path.GetFileName(t.FilePath!);
+                                    var title = name.Replace("\\","\\\\").Replace("[","\\[").Replace("]","\\]");
+                                    var embed = t.Item.X?.Kind == "image" || t.Item.X?.ExportGif == true ? "!" : "";
+                                    markdown += $"\n{embed}[{title}]({Uri.EscapeDataString(name)})\n";
+                                }
+                                await File.WriteAllTextAsync(temporary, markdown, ct);
+                            } else {
+                                if (media is not MediaRouter router) throw YoutubeEngine.XFailure("Engine");
+                                var file = await router.FetchXAsync(item,work, fraction => UpdateAsync(id,revision,t => t with {
+                                    Progress = fraction * 95, Message = "正在下载 X 附件" }, false).GetAwaiter().GetResult(),ct);
+                                if (item.AudioOutput != null) videoFiles = [file];
+                                else if (x.ExportGif) {
+                                    await UpdateAsync(id,revision,t => t with { State = DownloadState.Merging, Message = "转换 GIF" });
+                                    await MediaDownloader.RunAsync(executable, ["-hide_banner","-loglevel","error","-nostdin","-y","-protocol_whitelist","file","-i",file,
+                                        "-filter_complex","fps=15,scale='min(480,iw)':-2:flags=lanczos,split[v][p];[p]palettegen[pal];[v][pal]paletteuse","-loop","0",temporary],ct);
+                                } else temporary = file;
+                            }
+                        }
+                        else if (item.Item.YoutubeId != null)
                         {
                             if (media is not MediaRouter router) throw new BiliException("请安装 YouTube 下载组件。", BiliErrorKind.YoutubeComponent);
                             var tracks = await router.FetchAsync(item, work, fraction => UpdateAsync(id, revision, t => t with {
@@ -164,13 +211,13 @@ public sealed class DownloadQueue : IAsyncDisposable
                             }
                         }
                         ct.ThrowIfCancellationRequested();
-                        await UpdateAsync(id, revision, t => t with { State = DownloadState.Merging, Progress = 96, Message = item.AudioOutput == null ? "合并音视频" : "处理音频" });
-                        var temporary = Path.Combine(work, "merged" + (item.AudioOutput?.Extension ?? ".mp4"));
+                        if (item.Item.X == null || item.AudioOutput != null)
+                            await UpdateAsync(id, revision, t => t with { State = DownloadState.Merging, Progress = 96, Message = item.AudioOutput == null ? "合并音视频" : "处理音频" });
                         if (item.AudioOutput is { } export) await AudioExporter.ExportAsync(executable, videoFiles, export, item.Item, temporary, ct);
-                        else await MediaDownloader.MergeAsync(executable, videoFiles, audioFile, temporary, ct);
+                        else if (item.Item.X == null) await MediaDownloader.MergeAsync(executable, videoFiles, audioFile, temporary, ct);
                         ct.ThrowIfCancellationRequested();
-                        var filename = item.OutputFileName ?? (LinkParser.SafeName($"{item.Item.Title} P{item.Item.Index} {item.Item.PartTitle}") +
-                            $" [{item.Item.Id.Replace(':', '-')}-{actualQuality}].mp4");
+                        var filename = item.OutputFileName ?? (item.Item.X is {} post ? FileNaming.Render(item.Item,extension: item.AudioOutput?.Extension ?? post.OutputExtension) : (LinkParser.SafeName($"{item.Item.Title} P{item.Item.Index} {item.Item.PartTitle}") +
+                            $" [{item.Item.Id.Replace(':', '-')}-{actualQuality}].mp4"));
                         var staging = Path.Combine(item.Directory, $".bilidownload-{id:N}.tmp");
                         try
                         {
@@ -207,6 +254,7 @@ public sealed class DownloadQueue : IAsyncDisposable
         SemaphoreSlim execution;
         lock (sync) {
             if (!tasks.Remove(id)) return;
+            waitingForAttachments.Remove(id); WakeDocuments(id);
             ++revisions[id];
             if (running.Remove(id, out var token)) token.Cancel();
             execution = executionGates[id];

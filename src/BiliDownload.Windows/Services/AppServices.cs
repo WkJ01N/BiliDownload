@@ -55,7 +55,7 @@ public sealed class AppServices : IAsyncDisposable
         } catch (Exception ex) when (ex is JsonException or IOException) { }
         activeYoutube ??= ComponentPackages.FirstOrDefault(p => p.Id == "youtube" && Components.InstalledPath(p) != null);
         var youtube = new YoutubeEngine(() => activeYoutube == null ? null : Components.InstalledPath(activeYoutube),
-            Path.Combine(AppContext.BaseDirectory, "Assets", "youtube_bridge.py"), ReadYoutubeCookies);
+            Path.Combine(AppContext.BaseDirectory, "Assets", "youtube_bridge.py"), () => ReadCookies(false), () => ReadCookies(true));
         Media = new(Bili, youtube, () => Settings.ExpandRelatedItems);
         Queue = new(Media, new TaskStore(DataDirectory), Path.Combine(DataDirectory, "cache"), ResolveFfmpeg);
     }
@@ -75,36 +75,39 @@ public sealed class AppServices : IAsyncDisposable
         if (!IsNewer(candidate, ComponentPackages.Single(p => p.Id == "youtube"))) return false;
         OfferYoutube(candidate); return true;
     }
+    public bool IsYoutubeActive(ComponentPackage package) => package.Id == "youtube" && string.Equals(activeYoutube?.Sha256, package.Sha256, StringComparison.OrdinalIgnoreCase);
     public void ActivateYoutube(ComponentPackage package)
     {
+        if (!TrustedYoutube(package) || Components.InstalledPath(package) == null) throw new BiliException("组件尚未完成校验安装，请重新下载。");
         File.WriteAllText(ActiveYoutubeFile + ".tmp", JsonSerializer.Serialize(package));
         File.Move(ActiveYoutubeFile + ".tmp", ActiveYoutubeFile, true);
         var old = activeYoutube; activeYoutube = package;
         // An old engine can still be finishing a download. Its content-addressed directory is safe to keep.
-        if (old != null && old.Sha256 != package.Sha256)
+        if (old != null && old.Sha256 != package.Sha256 && !Queue.Snapshot().Any(t => t.State is DownloadState.Downloading or DownloadState.Merging))
             try { Components.Remove(old); } catch (IOException) { } catch (UnauthorizedAccessException) { }
     }
     public void RemoveYoutube(ComponentPackage package)
     {
         Components.Remove(package);
-        if (activeYoutube != null && activeYoutube.Sha256 != package.Sha256) Components.Remove(activeYoutube);
-        File.Delete(ActiveYoutubeFile); activeYoutube = null;
+        if (IsYoutubeActive(package)) { File.Delete(ActiveYoutubeFile); activeYoutube = null; }
     }
-    private string YoutubeSessionFile => Path.Combine(DataDirectory, "youtube-session.dat");
-    public bool HasYoutubeSession => File.Exists(YoutubeSessionFile);
-    private string? ReadYoutubeCookies()
+    private string SessionFile(bool x) => Path.Combine(DataDirectory, x ? "x-session.dat" : "youtube-session.dat");
+    public bool HasSession(bool x) => File.Exists(SessionFile(x));
+    private string? ReadCookies(bool x)
     {
-        try { return HasYoutubeSession ? Encoding.UTF8.GetString(ProtectedData.Unprotect(File.ReadAllBytes(YoutubeSessionFile), null, DataProtectionScope.CurrentUser)) : null; }
-        catch (CryptographicException) { throw new BiliException("YouTube 会话无法解密，请重新导入。", BiliErrorKind.YoutubeSession); }
+        try { return HasSession(x) ? Encoding.UTF8.GetString(ProtectedData.Unprotect(File.ReadAllBytes(SessionFile(x)), null, DataProtectionScope.CurrentUser)) : null; }
+        catch (CryptographicException) { throw new BiliException("会话无法解密，请重新导入。", x ? BiliErrorKind.XSession : BiliErrorKind.YoutubeSession); }
     }
-    public void ImportYoutubeSession(string path)
+    public void ImportSession(string path, bool x)
     {
-        if (new FileInfo(path).Length > YoutubeCookies.MaximumBytes) throw new BiliException("会话文件超过 128 KiB，请仅导出 YouTube 记录。");
-        var text = YoutubeCookies.Filter(File.ReadAllText(path));
-        File.WriteAllBytes(YoutubeSessionFile + ".tmp", ProtectedData.Protect(Encoding.UTF8.GetBytes(text), null, DataProtectionScope.CurrentUser));
-        File.Move(YoutubeSessionFile + ".tmp", YoutubeSessionFile, true);
+        if (new FileInfo(path).Length > YoutubeCookies.MaximumBytes) throw new BiliException("会话文件超过 128 KiB，请仅导出该平台的记录。");
+        var input = File.ReadAllText(path);
+        var text = x ? YoutubeCookies.FilterX(input) : YoutubeCookies.Filter(input);
+        var target = SessionFile(x);
+        File.WriteAllBytes(target + ".tmp", ProtectedData.Protect(Encoding.UTF8.GetBytes(text), null, DataProtectionScope.CurrentUser));
+        File.Move(target + ".tmp", target, true);
     }
-    public void ClearYoutubeSession() => File.Delete(YoutubeSessionFile);
+    public void ClearSession(bool x) => File.Delete(SessionFile(x));
     private string SettingsFile => Path.Combine(DataDirectory, "settings.json");
     public void SaveSettings(AppSettings settings)
     {

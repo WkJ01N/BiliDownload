@@ -2,7 +2,7 @@ plugins { id("com.android.application") }
 android {
     namespace = "io.github.bilidownload.audio"
     compileSdk = 36
-    defaultConfig { applicationId = "io.github.bilidownload.audio"; minSdk = 29; targetSdk = 36; versionCode = 8; versionName = "0.3.0" }
+    defaultConfig { applicationId = "io.github.bilidownload.audio"; minSdk = 29; targetSdk = 36; versionCode = 9; versionName = "0.3.0" }
     buildFeatures { aidl = true }
     sourceSets["main"].aidl.srcDir("../protocol")
     sourceSets["main"].assets.srcDir("build/generated/notices")

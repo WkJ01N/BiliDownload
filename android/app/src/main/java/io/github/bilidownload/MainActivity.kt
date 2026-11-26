@@ -37,8 +37,6 @@ import java.util.UUID
 class MainActivity : ComponentActivity() {
     private var input by mutableStateOf("")
     private var incoming by mutableIntStateOf(0)
-    private var resumeCount by mutableIntStateOf(0)
-    override fun onResume() { super.onResume(); resumeCount++ }
     private var detectRequested = false
     private var lastClipboard: String? = null
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); if(savedInstanceState != null) input = savedInstanceState.getString("input").orEmpty() else acceptIntent(intent); setContent { BiliScreen() } }
@@ -66,7 +64,20 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(incoming) { if (incoming > 0) tab = 0 }
             val youtube = BiliApplication.youtube
             val ytAccount by youtube.session.account.collectAsStateWithLifecycle()
-            val installation = remember(resumeCount) { youtube.installation() }
+            val xAccount by youtube.xSession.account.collectAsStateWithLifecycle()
+            var xGrouped by remember { mutableStateOf(prefs.getBoolean("xGrouped",true)) }
+            var gifIds by rememberSaveable(stateSaver = listSaver<Set<String>, String>(save = { it.toList() }, restore = { it.toSet() })) { mutableStateOf(emptySet<String>()) }
+            val components = BiliApplication.components
+            val componentState by components.state.collectAsStateWithLifecycle()
+            var pendingComponent by rememberSaveable { mutableStateOf<Bundle?>(null) }
+            fun requestComponent(operation: String, taskId: String? = null, preferAudio: Boolean = false) {
+                pendingComponent = Bundle().apply {
+                    putString("operation", operation)
+                    putString("input", input)
+                    putString("task", taskId)
+                    putBoolean("audio", preferAudio)
+                }
+            }
             var expand by remember { mutableStateOf(prefs.getBoolean("expandRelated", false)) }
             val pagesSaver = listSaver<List<PlaylistPage>, String>(save = { list -> list.map { it.id + ":" + it.start + ":" + it.music } },
                 restore = { list -> list.map { it.split(':').let { p -> PlaylistPage(p[0],p[1].toInt(),p.getOrNull(2).toBoolean()) } } })
@@ -83,14 +94,15 @@ class MainActivity : ComponentActivity() {
             var bitrate by rememberSaveable { mutableIntStateOf(320) }
             var trackIds by rememberSaveable { mutableStateOf(android.os.Bundle()) }
             val audioCache = remember { mutableStateMapOf<String,List<AudioTrack>>() }
-            fun audioMode(item: MediaItem) = mode == 2 || mode == 0 && item.music
+            fun audioMode(item: MediaItem) = (item.x == null || item.x.audio && item.x.kind == "video") && (mode == 2 || mode == 0 && item.music)
+            fun videoMode(item: MediaItem) = (item.x == null || item.x.video) && !audioMode(item)
             fun output(item: MediaItem): AudioOutput? {
                 if(!audioMode(item)) return null
                 val tracks = audioCache[item.id] ?: return null
                 val actual = tracks.firstOrNull { it.id == trackIds.getString(item.id) } ?: tracks.firstOrNull() ?: return null
                 return AudioOutput(actual, if(mp3) bitrate else 0)
             }
-            fun ext(item: MediaItem) = if(audioMode(item)) output(item)?.extension ?: if(mp3) ".mp3" else ".m4a" else ".mp4"
+            fun ext(item: MediaItem) = if(audioMode(item)) output(item)?.extension ?: if(mp3) ".mp3" else ".m4a" else if(item.x?.kind=="gif" && item.id in gifIds) ".gif" else item.x?.extension ?: ".mp4"
             var quality by rememberSaveable { mutableIntStateOf(80) }
             var detect by remember { mutableStateOf(prefs.getBoolean("detect", false)) }
             var directory by remember { mutableStateOf(prefs.getString("directory", null)) }
@@ -119,36 +131,23 @@ class MainActivity : ComponentActivity() {
                 if(account.state == SessionState.Saved) try { BiliApplication.api.api("https://api.bilibili.com/x/web-interface/nav") } catch(e: CancellationException) { throw e } catch(_: Exception) { }
             }
             val scope = rememberCoroutineScope()
+            var importingX by rememberSaveable { mutableStateOf(false) }
             val cookiePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
                 if (uri != null) scope.launch {
-                    try { youtube.import(uri); sizeCache.clear(); audioCache.clear(); detailAttempt++; message = "会话已导入，可返回重试。" }
+                    try { youtube.import(uri,importingX); sizeCache.clear(); audioCache.clear(); detailAttempt++; message = "会话已导入，可返回重试。" }
                     catch (e: Exception) { message = if (e is BiliException) e.message.orEmpty() else "无法导入会话文件。" }
                 }
             }
-            fun installExtension() {
-                runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(YoutubeClient.APK))) }
-                    .onFailure { message = "无法打开扩展下载链接。" }
+            fun manageSession(kind: String?) {
+                importingX = kind == "XSession"
+                cookiePicker.launch(arrayOf("text/*","application/octet-stream"))
             }
-            val activate = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-                if (result.resultCode == RESULT_OK) {
-                    youtube.acceptActivation(result.data?.extras?.getBinder("engine"))
-                    failureKind = null; message = "YouTube 扩展已连接，可返回重试。"
+            fun retryTask(entry: DownloadEntry) {
+                val needsParser = entry.item.youtubeId != null || entry.item.x?.let { it.document == null } == true
+                if(needsParser && !components.state.value.ready) requestComponent("task",entry.id)
+                else runCatching { DownloadActions.schedule(this@MainActivity, entry) }.onFailure {
+                    message = "无法开始任务，请重试。"
                 }
-            }
-            val audioProcessor = BiliApplication.audio
-            val audioActivation = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-                if(result.resultCode == RESULT_OK) { audioProcessor.activate(result.data?.extras?.getBinder("engine")); failureKind = null; message = "音频处理扩展已连接，可重试。" }
-            }
-            fun manageAudio(kind: String?) {
-                try {
-                    if(kind == "AudioConnect") audioActivation.launch(Intent().setComponent(ComponentName(AudioProcessor.PACKAGE, AudioProcessor.PACKAGE + ".ConnectActivity")))
-                    else startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(AudioProcessor.APK)))
-                } catch(_: Exception) { message = "无法打开音频处理扩展，请检查安装状态。" }
-            }
-            fun manageYoutube(kind: String?) {
-                if (kind == BiliErrorKind.YoutubeSession.name) cookiePicker.launch(arrayOf("text/*", "application/octet-stream"))
-                else if (kind == "YoutubeConnect") runCatching { activate.launch(Intent().setComponent(ComponentName(YoutubeClient.PACKAGE, YoutubeClient.PACKAGE + ".ConnectActivity"))) }.onFailure { message = "请先更新 YouTube 扩展。" }
-                else installExtension()
             }
             val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
             val login = rememberLauncherForActivityResult(LoginActivity.Contract()) { result ->
@@ -160,15 +159,20 @@ class MainActivity : ComponentActivity() {
             fun parseLinks(preferAudio: Boolean = false) {
                 if(loading) return
                 val requestInput = input
+                val links = Links.supported(requestInput)
+                if(!components.state.value.ready && links.any { YoutubeLink.parse(it) != null || XLink.parse(it) != null || XLink.short(it) }) {
+                    requestComponent("parse",preferAudio=preferAudio)
+                    return
+                }
                 val oldSelection = if(parsedInput == requestInput) selected else null
                 val previousItems = media.filter { it.id in oldSelection.orEmpty() && it.playlistId != null }
                 val oldQuality = if(parsedInput == requestInput) quality else null
                 scope.launch {
                     sizeCache.clear(); audioCache.clear(); pages = emptyList(); loading = true; message = ""; failureKind = null; retryParse = false
-                    if(parsedInput != requestInput) { customNamesJson = "{}"; sizeCache.clear(); sizes = emptyMap(); media = emptyList(); variants = emptyList(); selected = emptySet() }
+                    if(parsedInput != requestInput) { gifIds = emptySet(); customNamesJson = "{}"; sizeCache.clear(); sizes = emptyMap(); media = emptyList(); variants = emptyList(); selected = emptySet() }
                     try {
-                        val catalogs = Links.supported(requestInput).map { url ->
-                            YoutubeLink.parse(url)?.let { link ->
+                        val catalogs = links.map { url ->
+                            if(XLink.short(url) || XLink.parse(url) != null) youtube.xPost(XLink.parse(url) ?: XLink.expand(url)) else YoutubeLink.parse(url)?.let { link ->
                                 var catalog = youtube.resolve(link, expand)
                                 while (catalog.more != null && previousItems.any { old -> old.playlistId == catalog.more?.id && catalog.items.none { it.id == old.id } }) {
                                     val more = youtube.page(catalog.more!!)
@@ -179,19 +183,38 @@ class MainActivity : ComponentActivity() {
                         }
                         if (input != requestInput) return@launch
                         val resolved = catalogs.flatMap { it.items }.distinctBy { it.id }.sortedBy { it.music }
-                        if (resolved.isEmpty()) throw BiliException("没有找到可下载的视频。")
+                        if (resolved.isEmpty()) throw BiliException("没有找到可下载的内容。")
                         catalogs.forEach { catalog -> catalog.target?.let { id -> catalog.variants?.let { sizeCache[id] = it }; catalog.audio?.let { audioCache[id] = it } } }
                         if(parsedInput != requestInput) { mode = if(resolved.all { it.music }) 2 else if(resolved.none { it.music }) 1 else 0; mp3 = false; bitrate = 320; trackIds = android.os.Bundle() }
                         if(preferAudio) mode = 2
                         pages = catalogs.mapNotNull { it.more }; media = resolved; parsedInput = requestInput
-                        selected = oldSelection?.intersect(resolved.map { it.id }.toSet()) ?: catalogs.mapNotNull { it.target }.toSet()
-                        val reference = resolved.firstOrNull { it.id in selected && !audioMode(it) }
+                        selected = oldSelection?.intersect(resolved.filter { it.x?.available != false }.map { it.id }.toSet()) ?: catalogs.flatMap { it.defaults }.toSet()
+                        val reference = resolved.firstOrNull { it.id in selected && videoMode(it) }
                         variants = if (reference == null) emptyList() else sizeCache[reference.id] ?: youtube.variants(reference).also { sizeCache[reference.id] = it }
                         quality = preferredQuality(variants, oldQuality)
                     } catch(e: CancellationException) { throw e }
                     catch(e: Exception) { failureKind = (e as? BiliException)?.kind?.name; retryParse = true; message = if(e is BiliException) e.message.orEmpty() else "解析失败，请检查网络后重试。" }
                     finally { loading = false }
                 }
+            }
+            LaunchedEffect(componentState.ready, pendingComponent) {
+                val pending = pendingComponent ?: return@LaunchedEffect
+                if(!componentState.ready) return@LaunchedEffect
+                pendingComponent = null
+                when(pending.getString("operation")) {
+                    "task" -> pending.getString("task")?.let(BiliApplication.store::get)
+                        ?.takeIf { it.state == "Failed" || it.state == "Paused" }?.let(::retryTask)
+                    "parse" -> if(input == pending.getString("input")) parseLinks(pending.getBoolean("audio"))
+                    "details" -> if(input == pending.getString("input") && parsedInput == input) {
+                        failureKind = null; message = ""; detailAttempt++
+                    }
+                }
+            }
+            if (pendingComponent != null && !componentState.ready) {
+                MediaComponentDialog(componentState, components.downloadBytes, onInstall = { components.startInstall() }, onDismiss = {
+                    pendingComponent = null
+                    if(components.state.value.downloading) components.cancelInstall()
+                })
             }
             val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
                 if(uri != null) { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION); directory = uri.toString(); prefs.edit().putString("directory", directory).apply() }
@@ -207,14 +230,14 @@ class MainActivity : ComponentActivity() {
                         if(item.id !in audioCache) audioCache[item.id] = youtube.audio(item)
                         if(audioCache[item.id].isNullOrEmpty()) throw BiliException("当前没有可用音轨。")
                     }
-                    val first = chosen.firstOrNull { !audioMode(it) }
+                    val first = chosen.firstOrNull(::videoMode)
                     if (first == null) { variants = emptyList(); sizes = emptyMap(); return@LaunchedEffect }
                     val firstVariants = sizeCache[first.id] ?: youtube.variants(first).also { sizeCache[first.id] = it }
                     variants = firstVariants
                     val limit = firstVariants.firstOrNull { it.quality == quality } ?: run {
                         quality = preferredQuality(firstVariants, null); firstVariants.firstOrNull { it.quality == quality }
                     }
-                    for(item in chosen.filter { !audioMode(it) }) {
+                    for(item in chosen.filter(::videoMode)) {
                         val available = try { sizeCache[item.id] ?: youtube.variants(item).also { sizeCache[item.id] = it } }
                         catch(e: CancellationException) { throw e } catch(e: Exception) {
                             detailRetry = true; failureKind = (e as? BiliException)?.kind?.name
@@ -246,7 +269,16 @@ class MainActivity : ComponentActivity() {
                 } })
             }
             Scaffold(modifier = Modifier.fillMaxSize(), topBar = { TopAppBar(title = { Text("BiliDownload") }) }, bottomBar = {
-                NavigationBar(tonalElevation = 0.dp, containerColor = MaterialTheme.colorScheme.surfaceContainer) { listOf("解析", "下载", "已完成", "设置").forEachIndexed { i, text -> NavigationBarItem(selected = tab == i, onClick = { tab = i }, icon = { Icon(painterResource(listOf(R.drawable.ic_link, R.drawable.ic_download, R.drawable.ic_complete, R.drawable.ic_settings)[i]), contentDescription = text) }, label = { Text(text) }) } }
+                NavigationBar(tonalElevation = 0.dp, containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+                    val colors = MaterialTheme.colorScheme
+                    listOf("解析", "下载", "已完成", "设置").forEachIndexed { i, text ->
+                        NavigationBarItem(selected = tab == i, onClick = { tab = i },
+                            icon = { Icon(painterResource(listOf(R.drawable.ic_link, R.drawable.ic_download, R.drawable.ic_complete, R.drawable.ic_settings)[i]), contentDescription = text) },
+                            label = { Text(text) }, colors = NavigationBarItemDefaults.colors(
+                                indicatorColor = colors.primaryContainer, selectedIconColor = colors.onPrimaryContainer,
+                                selectedTextColor = colors.onPrimaryContainer))
+                    }
+                }
             }) { padding ->
                 AnimatedContent(targetState = tab, modifier = Modifier.padding(padding).fillMaxSize().clipToBounds(), transitionSpec = {
                     fadeIn(tween(250, easing = LinearOutSlowInEasing)) togetherWith fadeOut(tween(150, easing = LinearOutSlowInEasing))
@@ -254,39 +286,52 @@ class MainActivity : ComponentActivity() {
                 LazyColumn(Modifier.fillMaxSize(), state = listStates[activeTab], contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     if(message.isNotBlank()) item { BiliCard { Column(Modifier.padding(16.dp)) {
                         Text(message)
-                        if(failureKind in listOf("YoutubeComponent", "YoutubeSession", "YoutubeConnect")) TextButton(onClick = { manageYoutube(failureKind) }) { Text(if(failureKind == "YoutubeSession") "导入 YouTube 会话" else if(failureKind == "YoutubeConnect") "打开 YouTube 扩展" else "安装 YouTube 扩展") }
-                        if(failureKind in listOf("AudioComponent","AudioConnect")) TextButton(onClick = { manageAudio(failureKind) }) { Text(if(failureKind == "AudioConnect") "打开音频处理扩展" else "安装音频处理扩展") }
+                        if(failureKind in listOf("XSession","YoutubeSession")) TextButton(onClick = { manageSession(failureKind) }) {
+                            Text(if(failureKind == "XSession") "导入 X 会话" else "导入 YouTube 会话")
+                        }
                         if(AuthRecovery.needsLogin(failureKind, BiliApplication.session.state)) TextButton(onClick = { launchLogin() }) { Text("登录 B 站") }
-                        if(activeTab == 0 && detailRetry && !retryParse) TextButton(enabled = !sizeLoading, onClick = { detailAttempt++; message = "" }) { Text("重新获取画质") }
+                        if(activeTab == 0 && detailRetry && !retryParse) TextButton(enabled = !sizeLoading, onClick = {
+                            if(!componentState.ready && failureKind in listOf("XComponent","YoutubeComponent","YoutubeConnect")) requestComponent("details")
+                            else { detailAttempt++; message = "" }
+                        }) { Text("重新获取画质") }
                         if(activeTab == 0 && retryParse) TextButton(enabled = !loading, onClick = { parseLinks() }) { Text("重新解析") }
                     } } }
                     when(activeTab) {
                         0 -> {
                             item { Text("链接解析", style = MaterialTheme.typography.headlineSmall) }
-                            item { BiliTextField(value = input, onValueChange = { input = it }, label = { Text("B 站或 YouTube 链接") }, minLines = 3, maxLines = 6, modifier = Modifier.fillMaxWidth()) }
+                            item { BiliTextField(value = input, onValueChange = { input = it }, label = { Text("B 站、YouTube 或 X 链接") }, minLines = 3, maxLines = 6, modifier = Modifier.fillMaxWidth()) }
                             item { Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Button(enabled = !loading, onClick = { parseLinks() }) { Text(if(loading) "解析中…" else "解析链接") }
+                                FilledTonalButton(enabled = !loading, onClick = { parseLinks() }) { Text(if(loading) "解析中…" else "解析链接") }
                                 OutlinedButton(border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline), onClick = { runCatching { input = getSystemService(ClipboardManager::class.java).primaryClip?.getItemAt(0)?.coerceToText(this@MainActivity)?.toString().orEmpty() } }) { Text("粘贴") }
                             } }
                             if(media.isNotEmpty()) {
                                 item { Text("找到 ${media.size} 个条目") }
-                                item { Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) { TextButton(onClick = { selected = media.map { it.id }.toSet() }) { Text("全选") }; TextButton(onClick = { selected = emptySet() }) { Text("取消全选") } } }
-                                item { ChoiceMenu("下载内容",listOf("按链接类型","视频","音频"),mode) { mode = it } }
+                                item { Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) { TextButton(onClick = { selected = media.filter { it.x?.available != false }.map { it.id }.toSet() }) { Text("全选") }; TextButton(onClick = { selected = emptySet() }) { Text("取消全选") } } }
+                                if(media.any { it.x == null || it.x.audio }) item { ChoiceMenu("下载内容",listOf("按链接类型","视频","音频"),mode) { mode = it } }
                                 if(media.any(::audioMode)) item { ChoiceMenu("音频格式",listOf("保留原音","MP3"),if(mp3) 1 else 0) { mp3 = it == 1 } }
                                 if(mp3 && media.any(::audioMode)) item { val rates = listOf(320,192,128); ChoiceMenu("MP3 码率",rates.map { "$it kb/s" },rates.indexOf(bitrate)) { bitrate = rates[it] } }
-                                if (variants.isNotEmpty() && media.any { !audioMode(it) }) item { Box { OutlinedButton(border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline), onClick = { qualityOpen = true }) { Text("画质上限：${variants.firstOrNull { it.quality == quality }?.label.orEmpty()}") }; DropdownMenu(expanded = qualityOpen, onDismissRequest = { qualityOpen = false }) { variants.forEach { v -> DropdownMenuItem(text = { Text(v.label + "  " + MediaSize.format(v.estimatedBytes)) }, onClick = { quality = v.quality; qualityOpen = false }) } } } }
+                                if (variants.isNotEmpty() && media.any(::videoMode)) item { Box { OutlinedButton(border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline), onClick = { qualityOpen = true }) { Text("画质上限：${variants.firstOrNull { it.quality == quality }?.label.orEmpty()}") }; DropdownMenu(expanded = qualityOpen, onDismissRequest = { qualityOpen = false }) { variants.forEach { v -> DropdownMenuItem(text = { Text(v.label + "  " + MediaSize.format(v.estimatedBytes)) }, onClick = { quality = v.quality; qualityOpen = false }) } } } }
                                 val chosen = media.filter { it.id in selected }
-                                val totals = chosen.map { if(audioMode(it)) output(it)?.estimatedBytes else sizes[it.id]?.estimatedBytes }
+                                val totals = chosen.map { if(audioMode(it)) output(it)?.estimatedBytes else sizes[it.id]?.estimatedBytes ?: it.x?.bytes }
                                 item { Text(if(sizeLoading) "正在估算大小…" else "选中 ${selected.size} 项：" + MediaSize.format(totals.filterNotNull().takeIf { it.isNotEmpty() }?.sum()) + if(totals.any { it == null }) "，部分大小未知" else "") }
-                                item { Button(enabled = chosen.isNotEmpty() && chosen.all { if(audioMode(it)) output(it) != null else sizes[it.id] != null } && !sizeLoading && !loading && !retryParse && input == parsedInput, onClick = {
+                                item { FilledTonalButton(enabled = chosen.isNotEmpty() && chosen.all { if(audioMode(it)) output(it) != null else !videoMode(it) || sizes[it.id] != null } && !sizeLoading && !loading && !retryParse && input == parsedInput, onClick = {
                                     try {
-                                        if(chosen.any { output(it)?.needsProcessor == true }) audioProcessor.requireInstalled()
-                                        chosen.forEach { item ->
+                                        val related = mutableMapOf<String,MutableList<String>>()
+                                        chosen.sortedBy { it.x?.document != null }.forEach { item ->
                                             val audio = output(item)
                                             val actual = sizes[item.id]
-                                            val cap = if(audio != null) 0 else if(item.youtubeId == null && variants.firstOrNull()?.formatId == null) quality else requireNotNull(actual).quality
-                                            if(BiliApplication.store.entries.value.none { (it.item.youtubeId ?: it.item.id) == (item.youtubeId ?: item.id) && it.quality == cap && it.audioOutput?.track?.id == audio?.track?.id && it.audioOutput?.mp3Kbps == audio?.mp3Kbps && it.state !in listOf("Failed","Canceled") })
-                                                DownloadActions.schedule(this@MainActivity,DownloadEntry(UUID.randomUUID().toString(),item,cap,formatId = audio?.track?.id ?: actual?.formatId,outputFileName = FileNaming.render(item,namingTemplate,customNames()[item.id],ext(item)),audioOutput = audio))
+                                            val cap = if(audio != null || !videoMode(item)) 0 else if(item.x == null && item.youtubeId == null && variants.firstOrNull()?.formatId == null) quality else requireNotNull(actual).quality
+                                            val x = item.x
+                                            val destination = x?.let { XDestination(xGrouped,directory,if(xGrouped && it.document != null) related[it.postId].orEmpty().toList() else emptyList()) }
+                                            val extension = ext(item)
+                                            val existing = BiliApplication.store.entries.value.firstOrNull {
+                                                (it.item.youtubeId ?: it.item.id) == (item.youtubeId ?: item.id) && it.quality == cap &&
+                                                it.audioOutput?.track?.id == audio?.track?.id && it.audioOutput?.mp3Kbps == audio?.mp3Kbps &&
+                                                it.state !in listOf("Failed","Canceled") && (x == null || it.xDestination == destination && it.outputFileName?.endsWith(extension) == true)
+                                            }
+                                            val jobId = existing?.id ?: UUID.randomUUID().toString()
+                                            if(existing == null) DownloadActions.schedule(this@MainActivity,DownloadEntry(jobId,item,cap,formatId = audio?.track?.id ?: actual?.formatId,outputFileName = FileNaming.render(item,namingTemplate,customNames()[item.id],extension),audioOutput = audio,xDestination=destination))
+                                            if(x != null && x.document == null) related.getOrPut(x.postId) { mutableListOf() } += jobId
                                         }; message = "已加入下载队列"; tab = 1
                                     } catch(e: Exception) { failureKind = (e as? BiliException)?.kind?.name; message = if(e is BiliException) e.message.orEmpty() else "系统暂时无法开始下载，请保持应用可见后重试。" }
                                 }) { Text("下载选中内容") } }
@@ -309,17 +354,25 @@ class MainActivity : ComponentActivity() {
                                 items(media.sortedBy { audioMode(it) }, key = { it.id }) { item -> BiliCard { Column {
                                     Cover(item.cover)
                                     Row(Modifier.padding(12.dp)) {
-                                        BiliCheckbox(checked = item.id in selected, onCheckedChange = { selected = if(it) selected + item.id else selected - item.id })
+                                        BiliCheckbox(checked = item.id in selected, enabled = item.x?.available != false, onCheckedChange = { selected = if(it) selected + item.id else selected - item.id })
                                         Column {
                                             Text(item.title, style = MaterialTheme.typography.titleMedium)
                                             if(item.partTitle.isNotBlank() && item.partTitle != item.title) Text(item.partTitle)
+                                            if(item.x?.available == false) Text("没有可下载的 MP4 格式")
+                                            if(item.x?.kind == "gif" && item.id in selected) ChoiceMenu("动图格式",listOf("MP4","GIF"),if(item.id in gifIds) 1 else 0) { option ->
+                                                gifIds = if(option == 1) gifIds + item.id else gifIds - item.id
+                                            }
+                                            if(item.x?.document != null && item.id in selected) {
+                                                Text(item.x.document.text,maxLines=4,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                                if(item.x.document.truncated) Text("正文可能不完整")
+                                            }
                                             if(item.id in selected && audioMode(item)) {
                                                 val tracks = audioCache[item.id].orEmpty()
                                                 if(tracks.isNotEmpty()) ChoiceMenu("音质",listOf("自动最高") + tracks.map { it.label },tracks.indexOfFirst { it.id == trackIds.getString(item.id) } + 1) { index ->
                                                     trackIds = android.os.Bundle(trackIds).apply { if(index == 0) remove(item.id) else putString(item.id,tracks[index-1].id) }
                                                 }
                                                 output(item)?.let { Text(it.summary) }
-                                            } else if(item.id in selected) Text(if(sizeLoading) "正在估算…" else sizes[item.id]?.let { it.label + "  " + MediaSize.format(it.estimatedBytes) } ?: "没有兼容画质，可选择音频")
+                                            } else if(item.id in selected && videoMode(item)) Text(if(sizeLoading) "正在估算…" else sizes[item.id]?.let { it.label + "  " + MediaSize.format(it.estimatedBytes) } ?: "没有兼容画质，可选择音频")
                                             val name = FileNaming.render(item,namingTemplate,customNames()[item.id],ext(item))
                                             Text(name); TextButton(onClick = { renameId = item.id; renameText = name.substringBeforeLast('.') }) { Text("修改文件名") }
                                         }
@@ -332,16 +385,38 @@ class MainActivity : ComponentActivity() {
                             item { Text(if(activeTab == 1) "下载队列" else "已完成", style = MaterialTheme.typography.headlineSmall) }
                             if(list.isEmpty()) item { Text("暂无下载任务") }
                             items(list, key = { it.id }) { entry -> BiliCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text(entry.item.title, style = MaterialTheme.typography.titleMedium); if(entry.item.partTitle.isNotBlank() && entry.item.partTitle != entry.item.title) Text(entry.item.partTitle); (entry.finalFileName ?: entry.outputFileName)?.let { Text(it) }; LinearProgressIndicator(progress = { entry.progress }, modifier = Modifier.fillMaxWidth()); Text(entry.message)
-                                if(entry.state == "Completed" && entry.audioOutput != null) TextButton(onClick = { runCatching { startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(entry.uri),entry.audioOutput.mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }.onFailure { message = "无法打开音频文件。" } }) { Text("播放音频") }
-                                if(entry.state == "Completed") Button(onClick = { try { startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(entry.audioOutput?.mime ?: "video/mp4").putExtra(Intent.EXTRA_STREAM, Uri.parse(entry.uri)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION).apply { clipData = ClipData.newRawUri("file", Uri.parse(entry.uri)) }, if(entry.audioOutput == null) "分享视频" else "分享音频")) } catch(e: Exception) { message = "文件无法分享，请确认文件仍然存在。" } }) { Text(if(entry.audioOutput == null) "分享视频" else "分享音频") }
+                                Text(entry.item.title, style = MaterialTheme.typography.titleMedium); if(entry.item.partTitle.isNotBlank() && entry.item.partTitle != entry.item.title) Text(entry.item.partTitle); (entry.finalFileName ?: entry.outputFileName)?.let { Text(it) }; LinearProgressIndicator(progress = { entry.progress }, trackColor = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.fillMaxWidth())
+                                val status = if(entry.state == "Failed" && entry.message.contains("扩展")) when(entry.failureKind) {
+                                    "YoutubeComponent", "YoutubeConnect", "XComponent" -> if(componentState.ready) "组件已就绪，可重试。" else "需要下载 YouTube / X 解析组件。"
+                                    "GifComponent", "AudioComponent", "AudioConnect" -> "处理组件已内置，可重试。"
+                                    else -> entry.message
+                                } else entry.message
+                                Text(status)
+                                if (entry.state == "Completed" && (entry.item.x != null || entry.audioOutput != null)) {
+                                    TextButton(onClick = {
+                                        runCatching {
+                                            startActivity(Intent(Intent.ACTION_VIEW)
+                                                .setDataAndType(Uri.parse(entry.uri), entry.mime)
+                                                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                                        }.onFailure { message = "没有可打开该文件的应用，或文件已被移除。" }
+                                    }) { Text(if (entry.audioOutput != null) "播放音频" else "打开文件") }
+                                }
+                                if(entry.state == "Completed") FilledTonalButton(onClick = { try { startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(entry.mime).putExtra(Intent.EXTRA_STREAM, Uri.parse(entry.uri)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION).apply { clipData = ClipData.newRawUri("file", Uri.parse(entry.uri)) }, if(entry.item.x != null) "分享文件" else if(entry.audioOutput == null) "分享视频" else "分享音频")) } catch(e: Exception) { message = "文件无法分享，请确认文件仍然存在。" } }) { Text(if(entry.item.x != null) "分享文件" else if(entry.audioOutput == null) "分享视频" else "分享音频") }
                                 else Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    if(entry.state == "Failed" && entry.failureKind in listOf("AudioComponent","AudioConnect")) TextButton(onClick = { manageAudio(entry.failureKind) }) { Text(if(entry.failureKind == "AudioConnect") "打开音频处理扩展" else "安装音频处理扩展") }
-                                    if(entry.state == "Failed" && entry.failureKind == "TrackChanged") TextButton(onClick = { input = entry.item.youtubeId?.let { (if(entry.item.music) "https://music.youtube.com" else "https://www.youtube.com") + "/watch?v=" + it } ?: if(entry.item.episodeId > 0) "https://www.bilibili.com/" + (if(entry.item.kind == "course") "cheese/play/ep" else "bangumi/play/ep") + entry.item.episodeId else "https://www.bilibili.com/video/" + entry.item.bvid + "?p=" + entry.item.index; tab = 0; parseLinks(true) }) { Text("重新选择音轨") }
+                                    if (entry.state == "Failed" && entry.failureKind == "TrackChanged") {
+                                        TextButton(onClick = {
+                                            input = entry.item.x?.let { XLink(it.postId).url }
+                                                ?: entry.item.youtubeId?.let { (if (entry.item.music) "https://music.youtube.com" else "https://www.youtube.com") + "/watch?v=" + it }
+                                                ?: if (entry.item.episodeId > 0) "https://www.bilibili.com/" + (if (entry.item.kind == "course") "cheese/play/ep" else "bangumi/play/ep") + entry.item.episodeId
+                                                else "https://www.bilibili.com/video/" + entry.item.bvid + "?p=" + entry.item.index
+                                            tab = 0
+                                            parseLinks(true)
+                                        }) { Text(if (entry.item.x != null) "重新解析 X 帖子" else "重新选择音轨") }
+                                    }
 
-                                    if(entry.state == "Failed" && entry.failureKind in listOf("YoutubeComponent", "YoutubeSession", "YoutubeConnect")) TextButton(onClick = { manageYoutube(entry.failureKind) }) { Text(if(entry.failureKind == "YoutubeSession") "导入会话" else if(entry.failureKind == "YoutubeConnect") "打开扩展" else "安装扩展") }
+                                    if(entry.state == "Failed" && entry.failureKind in listOf("XSession","YoutubeSession")) TextButton(onClick = { manageSession(entry.failureKind) }) { Text("导入会话") }
                                     if(entry.state == "Failed" && AuthRecovery.needsLogin(entry.failureKind, BiliApplication.session.state)) TextButton(onClick = { launchLogin(entry.id) }) { Text("登录 B 站") }
-                                    if(entry.state in listOf("Paused", "Failed")) TextButton(onClick = { runCatching { DownloadActions.schedule(this@MainActivity, entry) }.onFailure { message = "无法开始任务，请重试。" } }) { Text("继续 / 重试") }
+                                    if(entry.state in listOf("Paused", "Failed")) TextButton(onClick = { retryTask(entry) }) { Text("继续 / 重试") }
                                     if(entry.state in listOf("Queued", "Downloading", "Merging")) TextButton(onClick = { scope.launch(Dispatchers.IO) { DownloadActions.pause(this@MainActivity, entry.id) } }) { Text("暂停") }
                                     if(entry.state != "Canceled") TextButton(onClick = { scope.launch(Dispatchers.IO) { DownloadActions.pause(this@MainActivity, entry.id, true) } }) { Text("取消") }
                                 }
@@ -351,15 +426,25 @@ class MainActivity : ComponentActivity() {
                         3 -> {
                             item { Text("设置", style = MaterialTheme.typography.headlineSmall) }
                             item { Text("B 站账号", style = MaterialTheme.typography.titleMedium); Text(account.label) }
-                            item { if(!account.loggedIn) Button(onClick = { launchLogin() }) { Text("登录 B 站") } else OutlinedButton(border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline), onClick = { BiliApplication.session.clear(); android.webkit.CookieManager.getInstance().removeAllCookies(null); message = "已退出登录" }) { Text("退出登录") } }
-                            item { Text("YouTube", style = MaterialTheme.typography.titleMedium); Text("下载扩展：" + installation)
-                                TextButton(onClick = { installExtension() }) { Text(if (installation == "已安装") "下载扩展更新" else "安装扩展") }
-                                Row { TextButton(onClick = { manageYoutube("YoutubeSession") }) { Text(if (ytAccount.loggedIn) "替换 cookies.txt" else "导入 cookies.txt") }
+                            item { if(!account.loggedIn) FilledTonalButton(onClick = { launchLogin() }) { Text("登录 B 站") } else OutlinedButton(border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline), onClick = { BiliApplication.session.clear(); android.webkit.CookieManager.getInstance().removeAllCookies(null); message = "已退出登录" }) { Text("退出登录") } }
+                            item { MediaComponentSetting(componentState) { requestComponent("settings") } }
+                            item { Text("YouTube", style = MaterialTheme.typography.titleMedium)
+                                Row { TextButton(onClick = { manageSession("YoutubeSession") }) { Text(if (ytAccount.loggedIn) "替换 cookies.txt" else "导入 cookies.txt") }
                                     if (ytAccount.loggedIn) TextButton(onClick = { youtube.session.clear(); sizeCache.clear(); audioCache.clear(); detailAttempt++; message = "YouTube 会话已移除" }) { Text("移除会话") } }
                             }
                             item { Row(verticalAlignment = Alignment.CenterVertically) { BiliSwitch(checked = expand, onCheckedChange = { expand = it; prefs.edit().putBoolean("expandRelated", it).apply() }); Text("展开 YouTube 播放列表", Modifier.padding(12.dp)) } }
                             item { Row(verticalAlignment = Alignment.CenterVertically) { BiliSwitch(checked = detect, onCheckedChange = { detect = it; prefs.edit().putBoolean("detect", it).apply() }); Text("切回应用时识别剪贴板", Modifier.padding(12.dp)) } }
-                            item { Text("音频处理", style = MaterialTheme.typography.titleMedium); TextButton(onClick = { manageAudio(null) }) { Text(if(audioProcessor.installed()) "下载扩展更新" else "安装音频处理扩展") } }
+                            item {
+                                Text("X（Twitter）",style=MaterialTheme.typography.titleMedium)
+                                Row {
+                                    TextButton(onClick={ manageSession("XSession") }) { Text(if(xAccount.loggedIn) "替换 X 会话" else "导入 X 会话") }
+                                    if(xAccount.loggedIn) TextButton(onClick={ youtube.xSession.clear(); message="X 会话已移除" }) { Text("移除会话") }
+                                }
+                                Row(verticalAlignment=Alignment.CenterVertically) {
+                                    BiliSwitch(xGrouped) { xGrouped = it; prefs.edit().putBoolean("xGrouped",it).apply() }
+                                    Text("按帖子保存到独立文件夹",Modifier.padding(12.dp))
+                                }
+                            }
                             item { Text("文件命名", style = MaterialTheme.typography.titleMedium) }
                             item { BiliTextField(value = namingDraft, onValueChange = { namingDraft = it }, label = { Text("默认文件名模板") }, modifier = Modifier.fillMaxWidth()) }
                             item { TextButton(onClick = { showNamingVariables = !showNamingVariables }) { Text(if(showNamingVariables) "收起命名变量" else "插入命名变量") } }
@@ -372,7 +457,7 @@ class MainActivity : ComponentActivity() {
                             item { Text("保存位置：${directory ?: "视频 Movies/BiliDownload，音频 Music/BiliDownload"}") }
                             item { Row { OutlinedButton(border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline), onClick = { picker.launch(null) }) { Text("选择目录") }; TextButton(onClick = { directory = null; prefs.edit().remove("directory").apply() }) { Text("恢复默认") } } }
                             item { Row { listOf("Default" to "系统", "Light" to "浅色", "Dark" to "深色").forEach { (value,label) -> TextButton(onClick = { theme = value; prefs.edit().putString("theme", value).apply() }) { Text(label) } } } }
-                            item { Text("BiliDownload  Android 0.3.0") }
+                            item { Text("BiliDownload  Android 0.4.0") }
                             item { TextButton(onClick = { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/WkJ01N/BiliDownload"))) }.onFailure { message = "无法打开浏览器，请访问 github.com/WkJ01N/BiliDownload。" } }) { Text("GitHub 仓库") } }
                         }
                     }

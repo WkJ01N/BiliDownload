@@ -5,7 +5,11 @@ using System.Text.RegularExpressions;
 
 namespace BiliDownload.Core;
 
-public record ComponentPackage(string Id, string Name, string Version, string Url, string Sha256, long DownloadBytes, long InstalledBytes, string EntryPoint = "ffmpeg.exe");
+public record ComponentPackage(string Id, string Name, string Version, string Url, string Sha256, long DownloadBytes, long InstalledBytes, string EntryPoint = "ffmpeg.exe")
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string DisplayName => Id == "youtube" ? "YouTube / X 下载组件" : Name;
+}
 public record ComponentProgress(string Message, double? Fraction);
 
 /// <summary>Downloads owned optional components separately from account data and application files.</summary>
@@ -53,7 +57,7 @@ public sealed class ComponentInstaller(string directory, HttpClient http)
                     received += count;
                     if (received > 256L * 1024 * 1024) throw new BiliException("组件下载体积超出限制。");
                     await output.WriteAsync(buffer.AsMemory(0, count), ct);
-                    progress?.Report(new("正在下载 " + package.Name, total is > 0 ? (double)received / total.Value : null));
+                    progress?.Report(new("正在下载 " + package.DisplayName, total is > 0 ? (double)received / total.Value : null));
                 }
             }
             progress?.Report(new("校验下载文件", null));

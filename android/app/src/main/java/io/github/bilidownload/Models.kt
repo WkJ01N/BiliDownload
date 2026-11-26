@@ -1,13 +1,13 @@
 package io.github.bilidownload
 
 data class MediaItem(val id: String, val title: String, val partTitle: String, val kind: String,
-    val aid: Long, val bvid: String, val cid: Long, val episodeId: Long, val index: Int, val cover: String = "", val partCount: Int = 1, val youtubeId: String? = null, val playlistId: String? = null, val music: Boolean = false)
+    val aid: Long, val bvid: String, val cid: Long, val episodeId: Long, val index: Int, val cover: String = "", val partCount: Int = 1, val youtubeId: String? = null, val playlistId: String? = null, val music: Boolean = false, val x: XContent? = null)
 data class Variant(val quality: Int, val label: String, val estimatedBytes: Long? = null, val formatId: String? = null)
 data class StreamPart(val key: String, val url: String, val backups: List<String>)
 data class DownloadPlan(val variant: Variant, val video: List<StreamPart>, val audio: StreamPart?)
 data class DownloadEntry(val id: String, val item: MediaItem, val quality: Int,
-    val state: String = "Queued", val progress: Float = 0f, val message: String = "等待下载", val uri: String? = null, val failureKind: String? = null, val outputFileName: String? = null, val finalFileName: String? = null, val formatId: String? = null, val audioOutput: AudioOutput? = null)
-enum class BiliErrorKind { Unknown, LoginRequired, RequestRestricted, YoutubeSession, YoutubeComponent, YoutubeConnect, AudioComponent, AudioConnect, TrackChanged }
+    val state: String = "Queued", val progress: Float = 0f, val message: String = "等待下载", val uri: String? = null, val failureKind: String? = null, val outputFileName: String? = null, val finalFileName: String? = null, val formatId: String? = null, val audioOutput: AudioOutput? = null, val xDestination: XDestination? = null)
+enum class BiliErrorKind { Unknown, LoginRequired, RequestRestricted, YoutubeSession, YoutubeComponent, YoutubeConnect, AudioComponent, AudioConnect, TrackChanged, XSession, XComponent, GifComponent }
 enum class SessionState { Guest, Saved, Authenticated, Expired }
 enum class LoginOutcome { Success, Canceled, Failed }
 data class LoginResult(val outcome: LoginOutcome, val message: String? = null)
@@ -28,14 +28,14 @@ object AuthRecovery {
 }
 
 object Links {
-    private val pattern = Regex("https?://(?:[a-zA-Z0-9-]+\\.)*(?:bilibili\\.com|b23\\.tv|youtube\\.com|youtu\\.be)(?=[/?#\\s，。；！？、）】]|$)[^\\s<>\"，。；！？、）】]*", RegexOption.IGNORE_CASE)
+    private val pattern = Regex("https?://(?:[a-zA-Z0-9-]+\\.)*(?:bilibili\\.com|b23\\.tv|youtube\\.com|youtu\\.be|x\\.com|twitter\\.com|t\\.co)(?=[/?#\\s，。；！？、）】]|$)[^\\s<>\"，。；！？、）】]*", RegexOption.IGNORE_CASE)
     fun allowed(url: String): Boolean = runCatching {
         val uri = java.net.URI(url); val host = uri.host.orEmpty().lowercase()
         uri.scheme in listOf("http", "https") && uri.port == -1 && (host == "b23.tv" || host == "bilibili.com" || host.endsWith(".bilibili.com"))
     }.getOrDefault(false)
     fun extract(text: String): List<String> = supported(text).filter(::allowed)
     fun supported(text: String): List<String> {
-        val links = pattern.findAll(text).map { it.value.trimEnd('.', ',', ')', ']') }.filter { allowed(it) || YoutubeLink.parse(it) != null }.distinct().toList()
+        val links = pattern.findAll(text).map { it.value.trimEnd('.', ',', ')', ']') }.filter { allowed(it) || YoutubeLink.parse(it) != null || XLink.parse(it) != null || XLink.short(it) }.distinct().toList()
         if (links.isNotEmpty() || text.contains("://")) return links
         return Regex("(?<![a-zA-Z0-9])(?:BV[a-zA-Z0-9]{10}|av[0-9]+)(?![a-zA-Z0-9])").findAll(text)
             .map { "https://www.bilibili.com/video/${it.value}" }.distinct().toList()
@@ -54,7 +54,7 @@ fun preferredQuality(variants: List<Variant>, previous: Int?): Int =
     variants.minOfOrNull { it.quality } ?: 80
 
 fun atMost(variants: List<Variant>, limit: Variant, item: MediaItem): Variant? {
-    if ((item.youtubeId != null) == (limit.formatId != null))
+    if ((item.youtubeId != null || item.x != null) == (limit.formatId != null))
         return variants.filter { it.quality <= limit.quality }.maxByOrNull { it.quality }
     fun height(v: Variant) = if (v.formatId != null) v.quality else when (v.quality) {
         in 0..6 -> 240

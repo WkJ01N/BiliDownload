@@ -31,7 +31,25 @@ class AudioService : Service() {
                              extension: String, mp3Kbps: Int, channels: Int, owner: IBinder): Int {
             caller()
             val muxer = mapOf(".flac" to "flac", ".m4a" to "mp4", ".opus" to "opus", ".mp3" to "mp3")[extension] ?: return 1
-            if(UUID.fromString(id).toString() != id || sources.isEmpty() || mp3Kbps !in listOf(0,128,192,320) || mp3Kbps != 0 && extension != ".mp3") return 1
+            if (sources.isEmpty() || mp3Kbps !in listOf(0, 128, 192, 320) || mp3Kbps != 0 && extension != ".mp3") return 1
+            return encode(id, sources, destination, owner, muxer) {
+                addAll(listOf("-map", "0:a:0", "-vn", "-c:a", if (mp3Kbps == 0) "copy" else "libmp3lame"))
+                if (mp3Kbps > 0) addAll(listOf("-b:a", "${mp3Kbps}k", "-ac", if (channels == 1) "1" else "2"))
+            }
+        }
+
+        override fun convertGif(id: String, source: ParcelFileDescriptor, destination: ParcelFileDescriptor, owner: IBinder): Int {
+            caller()
+            return encode(id, arrayOf(source), destination, owner, "gif") {
+                addAll(listOf("-an", "-sn", "-dn", "-filter_complex",
+                    "[0:v:0]fps=15,scale='min(480,iw)':-2:flags=lanczos,split[frames][colors];[colors]palettegen[palette];[frames][palette]paletteuse",
+                    "-loop", "0"))
+            }
+        }
+
+        private fun encode(id: String, sources: Array<out ParcelFileDescriptor>, destination: ParcelFileDescriptor,
+                           owner: IBinder, muxer: String, options: MutableList<String>.() -> Unit): Int {
+            if (runCatching { UUID.fromString(id).toString() }.getOrNull() != id) return 1
             val work = Work()
             if(active.putIfAbsent(id, work) != null) return 1
             val dir = File(cacheDir, id)
@@ -53,9 +71,8 @@ class AudioService : Service() {
                     File(dir,"segments.txt").writeText(files.joinToString("\n") { "file '${it.name}'" })
                     args += listOf("-f","concat","-safe","1","-i","segments.txt")
                 }
-                args += listOf("-map","0:a:0","-vn","-c:a", if(mp3Kbps == 0) "copy" else "libmp3lame")
-                if(mp3Kbps > 0) args += listOf("-b:a","${mp3Kbps}k","-ac",if(channels == 1) "1" else "2")
-                val out = File(dir,"audio$extension")
+                args.options()
+                val out = File(dir, "converted")
                 args += listOf("-f",muxer,out.name)
                 val proc = ProcessBuilder(args).directory(dir).redirectErrorStream(true).redirectOutput(File("/dev/null")).start()
                 work.process = proc

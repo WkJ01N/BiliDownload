@@ -107,13 +107,14 @@ public sealed partial class MainWindow : Window
         (AppWindow.Presenter as Microsoft.UI.Windowing.OverlappedPresenter)?.Restore();
         Activate(); SetForegroundWindow(WinRT.Interop.WindowNative.GetWindowHandle(this));
     }
+    public void OpenXSettings() { OpenSettings(); (ContentFrame.Content as SettingsPage)?.SelectXAccount(); }
     public void OpenYoutubeSettings() { OpenSettings(); (ContentFrame.Content as SettingsPage)?.SelectYoutubeComponent(); }
     public void OpenSettings() { Navigation.SelectedItem = Navigation.SettingsItem; ContentFrame.Navigate(typeof(SettingsPage)); }
     public void OpenAudioSettings() { OpenSettings(); (ContentFrame.Content as SettingsPage)?.SelectFullFfmpeg(); }
-    public async Task ChooseAudioAsync(string url) {
+    public async Task ReparseAsync(string url, bool audio) {
         Navigation.SelectedItem = Navigation.MenuItems.OfType<NavigationViewItem>().First(i => i.Tag as string == "home");
         if(ContentFrame.Content is not HomePage) ContentFrame.Navigate(typeof(HomePage));
-        await ((HomePage)ContentFrame.Content).ChooseAudioAsync(url);
+        await ((HomePage)ContentFrame.Content).ReparseAsync(url, audio);
     }
     public void OpenQueue()
     {
@@ -245,7 +246,7 @@ public sealed partial class MainWindow : Window
             if (signature == lastClipboard) return;
             lastClipboard = signature; if (links.Length == 0) return;
             var request = App.Services.ClipboardRequests.Create(links); pendingClipboard = request.Id;
-            ClipboardNotice.Title = "发现视频链接"; ClipboardNotice.Message = "";
+            ClipboardNotice.Title = "发现可下载链接"; ClipboardNotice.Message = "";
             ViewClipboardButton.IsEnabled = true; ClipboardNotice.IsOpen = true;
             if (!foreground && App.Services.Settings.MonitorClipboard) App.Services.Notifications.Show(request);
         }

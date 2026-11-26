@@ -1,7 +1,7 @@
 param([string]$FfmpegDirectory, [switch]$SkipInstaller)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$version = '0.3.0'
+$version = '0.4.0'
 $env:DOTNET_CLI_HOME = Join-Path $projectRoot '.build/dotnet'
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 $env:MSBuildEnableWorkloadResolver = 'false'
@@ -18,7 +18,8 @@ dotnet publish (Join-Path $projectRoot 'src/BiliDownload.Windows/BiliDownload.Wi
 if ($LASTEXITCODE -ne 0) { throw 'Windows publish failed.' }
 if (-not (Test-Path -LiteralPath (Join-Path $payload 'BiliDownload.pri'))) { throw 'WinUI resource index is missing from publish output.' }
 Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE'),(Join-Path $projectRoot 'THIRD_PARTY_NOTICES.md'),(Join-Path $projectRoot 'README.md'),(Join-Path $projectRoot 'VALIDATION.md') -Destination $docs
-Copy-Item -LiteralPath (Join-Path $projectRoot 'branding') -Destination $docs -Recurse
+$brandDocs = New-Item -ItemType Directory -Force (Join-Path $docs 'branding')
+Get-ChildItem -LiteralPath (Join-Path $projectRoot 'branding') -File | Copy-Item -Destination $brandDocs.FullName
 if (-not $FfmpegDirectory) { $FfmpegDirectory = & (Join-Path $PSScriptRoot 'get-component.ps1') -Id ffmpeg-minimal }
 $sourceDirectory = (Resolve-Path -LiteralPath $FfmpegDirectory).Path
 $executable = Join-Path $sourceDirectory 'ffmpeg.exe'

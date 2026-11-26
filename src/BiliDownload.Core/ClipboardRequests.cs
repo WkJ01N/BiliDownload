@@ -8,13 +8,15 @@ public static class ClipboardPolicy
         settings with { MonitorClipboard = true, ClipboardBehaviorVersion = 1 };
 
     // Clipboard inspection deliberately does not resolve short URLs or call any API.
-    public static string[] Links(string text) => LinkParser.ExtractSupported(text).Where(u => YoutubeLink.Parse(u) != null ||
+    public static string[] Links(string text) => LinkParser.ExtractSupported(text).Where(u => XLink.Parse(u) != null || XLink.IsShort(u) || YoutubeLink.Parse(u) != null ||
         u.Host.Equals("b23.tv", StringComparison.OrdinalIgnoreCase) ||
         u.AbsolutePath.StartsWith("/video/", StringComparison.OrdinalIgnoreCase) ||
         u.AbsolutePath.StartsWith("/bangumi/play/", StringComparison.OrdinalIgnoreCase) ||
         u.AbsolutePath.StartsWith("/bangumi/media/", StringComparison.OrdinalIgnoreCase) ||
         u.AbsolutePath.StartsWith("/cheese/play/", StringComparison.OrdinalIgnoreCase))
         .Select(u => {
+            if (XLink.Parse(u) is {} post) return post.Canonical;
+            if (XLink.IsShort(u)) return u.GetLeftPart(UriPartial.Path);
             if (YoutubeLink.Parse(u) is { } youtube) return youtube.Canonical;
             if (u.Host.Equals("b23.tv", StringComparison.OrdinalIgnoreCase)) return u.AbsoluteUri;
             var page = BiliClient.ParseQuery(u).GetValueOrDefault("p");
@@ -23,10 +25,11 @@ public static class ClipboardPolicy
 
     public static bool ShouldAutoDownload(AppSettings settings, int linkCount, IReadOnlyList<MediaCatalog> catalogs) =>
         settings.AutoDownloadOnNotificationClick && !settings.ExpandRelatedItems && linkCount == 1 && catalogs.Count == 1 &&
-        catalogs[0].TargetItemId != null && catalogs[0].Items.Any(i => i.Id == catalogs[0].TargetItemId);
+        catalogs[0].Items.Count(i => i.X is { Kind: not "markdown" }) <= 1 &&
+        catalogs[0].TargetItemId != null && catalogs[0].Items.Any(i => i.Id == catalogs[0].TargetItemId && i.X?.Available != false);
 
     public static IReadOnlyList<MediaItem> VisibleItems(AppSettings settings, IReadOnlyList<MediaCatalog> catalogs) =>
-        catalogs.SelectMany(c => settings.ExpandRelatedItems || c.TargetItemId == null ? c.Items : c.Items.Where(i => i.Id == c.TargetItemId)).DistinctBy(i => i.Id).ToArray();
+        catalogs.SelectMany(c => c.Items.Any(i => i.X != null) || settings.ExpandRelatedItems || c.TargetItemId == null ? c.Items : c.Items.Where(i => i.Id == c.TargetItemId)).DistinctBy(i => i.Id).ToArray();
 }
 
 public sealed record ClipboardRequest(Guid Id, string[] Links, DateTimeOffset CreatedAt);

@@ -30,11 +30,12 @@ bin="$ndk/toolchains/llvm/prebuilt/$host/bin"
 export PATH="$bin:$PATH"
 make_cmd="${MAKE:-make}"
 for abi in "${@:-arm64-v8a armeabi-v7a x86_64 x86}"; do for arch in $abi; do
+  arch_options=()
   case "$arch" in
     arm64-v8a) target=aarch64-linux-android; cpu=aarch64;;
     armeabi-v7a) target=armv7a-linux-androideabi; cpu=arm;;
     x86_64) target=x86_64-linux-android; cpu=x86_64;;
-    x86) target=i686-linux-android; cpu=x86;;
+    x86) target=i686-linux-android; cpu=x86; arch_options+=(--disable-inline-asm);;
     *) exit 2;;
   esac
   work="$cache/$arch"
@@ -52,13 +53,14 @@ for abi in "${@:-arm64-v8a armeabi-v7a x86_64 x86}"; do for arch in $abi; do
    "$make_cmd" -C libmp3lame install
    "$make_cmd" -C include install)
   (cd "$work/ffmpeg"
-   ./configure --target-os=android --arch="$cpu" --enable-cross-compile --cc="$CC" --ar="$AR" --nm="$NM" --ranlib="$RANLIB" --strip="$STRIP" \
-     --disable-autodetect --disable-everything --disable-network --disable-doc --disable-debug --disable-x86asm --disable-ffplay --disable-ffprobe --disable-avdevice --disable-swscale \
+   ./configure --target-os=android --arch="$cpu" "${arch_options[@]}" --enable-cross-compile --cc="$CC" --ar="$AR" --nm="$NM" --ranlib="$RANLIB" --strip="$STRIP" \
+     --disable-autodetect --disable-everything --disable-network --disable-doc --disable-debug --disable-x86asm --disable-ffplay --disable-ffprobe --disable-avdevice \
      --enable-ffmpeg --enable-small --enable-static --disable-shared --enable-protocol=file \
      --enable-demuxer=mov,matroska,ogg,flac,aac,mp3,flv,mpegts,concat,eac3,ac3 \
-     --enable-muxer=mp4,mp3,opus,flac --enable-parser=aac,ac3,flac,mpegaudio,opus \
-     --enable-decoder=aac,aac_fixed,opus,flac,eac3,ac3,mp3,vorbis \
-     --enable-encoder=libmp3lame --enable-libmp3lame --enable-filter=aresample,aformat,anull --enable-bsf=aac_adtstoasc \
+     --enable-muxer=mp4,mp3,opus,flac,gif --enable-parser=aac,ac3,flac,h264,mpegaudio,opus \
+     --enable-decoder=aac,aac_fixed,opus,flac,eac3,ac3,h264,mp3,vorbis \
+     --enable-encoder=libmp3lame,gif --enable-libmp3lame \
+     --enable-filter=aresample,aformat,anull,format,fps,null,palettegen,paletteuse,scale,split --enable-bsf=aac_adtstoasc \
      --extra-cflags="-Os -fPIC -I$prefix/include" --extra-ldflags="-L$prefix/lib -Wl,-z,max-page-size=16384 -pie"
    "$make_cmd" -j"${BUILD_JOBS:-6}" ffmpeg
    llvm-strip -o "$stamp.tmp" ffmpeg

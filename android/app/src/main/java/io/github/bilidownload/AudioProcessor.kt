@@ -1,57 +1,94 @@
 package io.github.bilidownload
 
-import android.content.*
-import android.content.pm.PackageManager
-import android.os.Binder
-import android.os.IBinder
+import android.content.Context
 import android.os.ParcelFileDescriptor
 import com.kyant.taglib.Picture
 import com.kyant.taglib.TagLib
-import io.github.bilidownload.bridge.IAudioProcessor
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.UUID
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption.REPLACE_EXISTING
+import java.util.concurrent.TimeUnit
 
 class AudioProcessor(private val context: Context) {
-    companion object {
-        const val PACKAGE = "io.github.bilidownload.audio"
-        const val APK = "https://github.com/WkJ01N/BiliDownload/releases/download/v0.3.0/BiliDownload-0.3.0-audio.apk"
-    }
-    @Volatile private var activated: IAudioProcessor? = null
-    fun activate(binder: IBinder?) { activated = binder?.let { IAudioProcessor.Stub.asInterface(it) } }
-    fun installed() = context.packageManager.checkSignatures(PACKAGE, context.packageName) == PackageManager.SIGNATURE_MATCH
-    fun requireInstalled() { if(!installed()) throw BiliException("请安装同签名的音频处理扩展。", BiliErrorKind.AudioComponent) }
+    private val executable = File(context.applicationInfo.nativeLibraryDir, "libaudio-ffmpeg.so")
 
-    suspend fun convert(files: List<File>, out: File, selection: AudioOutput) = withContext(Dispatchers.IO) {
-        requireInstalled()
-        val ready = CompletableDeferred<IAudioProcessor>()
-        val conn = object : ServiceConnection {
-            override fun onServiceConnected(name: ComponentName, binder: IBinder) { ready.complete(IAudioProcessor.Stub.asInterface(binder)) }
-            override fun onServiceDisconnected(name: ComponentName) { ready.completeExceptionally(BiliException("音频处理扩展已断开，请重试。")) }
-            override fun onNullBinding(name: ComponentName) = onServiceDisconnected(name)
+    fun requireInstalled() {
+        if (!executable.isFile) throw BiliException("当前安装包缺少媒体转换组件，请重新安装 BiliDownload。")
+    }
+
+    fun requireGif() = requireInstalled()
+
+    suspend fun convert(files: List<File>, out: File, selection: AudioOutput) {
+        val muxer = when (selection.extension) {
+            ".m4a" -> "mp4"
+            ".mp3" -> "mp3"
+            ".opus" -> "opus"
+            ".flac" -> "flac"
+            else -> throw BiliException("不支持此音频输出格式。")
         }
-        val bound = context.bindService(Intent().setComponent(ComponentName(PACKAGE,"$PACKAGE.AudioService")).addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES),conn,Context.BIND_AUTO_CREATE)
+        val convert = selection.mp3Kbps > 0
+        val args = mutableListOf("-map", "0:a:0", "-vn", "-c:a", if (convert) "libmp3lame" else "copy")
+        if (convert) args += listOf("-b:a", "${selection.mp3Kbps}k", "-ac", if (selection.track.channels == 1) "1" else "2")
+        process(files, out, muxer, args)
+    }
+
+    suspend fun convertGif(source: File, output: File) {
+        process(listOf(source), output, "gif", listOf("-an", "-sn", "-dn", "-filter_complex",
+            "[0:v:0]fps=15,scale='min(480,iw)':-2:flags=lanczos,split[frames][colors];[colors]palettegen[palette];[frames][palette]paletteuse",
+            "-loop", "0"))
+    }
+
+    private suspend fun process(files: List<File>, out: File, muxer: String, options: List<String>) = withContext(Dispatchers.IO) {
+        requireInstalled()
+        require(files.isNotEmpty())
+        val work = Files.createTempDirectory(context.cacheDir.toPath(), "convert-").toFile()
         try {
-            val remote = (if(bound) withTimeoutOrNull(8000) { ready.await() } else null) ?: activated?.takeIf { it.asBinder().isBinderAlive }
-                ?: throw BiliException("请打开音频处理扩展后重试。",BiliErrorKind.AudioConnect)
-            if(remote.version() != 1) throw BiliException("请更新音频处理扩展。",BiliErrorKind.AudioComponent)
-            val inputs = mutableListOf<ParcelFileDescriptor>()
-            val id = UUID.randomUUID().toString()
+            val command = mutableListOf(executable.path, "-nostdin", "-hide_banner", "-loglevel", "error",
+                "-y", "-protocol_whitelist", "file")
+            if (files.size == 1) {
+                command += listOf("-i", files.single().absolutePath)
+            } else {
+                val playlist = File(work, "segments.txt")
+                playlist.writeText(files.joinToString("\n") { file ->
+                    val path = file.absolutePath
+                    require('\n' !in path && '\r' !in path)
+                    "file '${path.replace("'", "'\\''")}'"
+                })
+                command += listOf("-f", "concat", "-safe", "0", "-i", playlist.absolutePath)
+            }
+            val staged = File(work, "converted")
+            command += options
+            command += listOf("-f", muxer, staged.absolutePath)
+            ensureActive()
+            val process = try {
+                ProcessBuilder(command).directory(work).redirectErrorStream(true)
+                    .redirectOutput(File("/dev/null")).start()
+            } catch (_: IOException) {
+                throw BiliException("无法启动媒体转换组件。")
+            }
             try {
-                files.forEach { inputs += ParcelFileDescriptor.open(it,ParcelFileDescriptor.MODE_READ_ONLY) }
-                ParcelFileDescriptor.open(out, ParcelFileDescriptor.MODE_CREATE or ParcelFileDescriptor.MODE_TRUNCATE or ParcelFileDescriptor.MODE_READ_WRITE).use { dest ->
-                    val cancellation = launch(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) { try { awaitCancellation() } finally { runCatching { remote.cancel(id) } } }
-                    try {
-                        val result = remote.convert(id,inputs.toTypedArray(),dest,selection.extension,selection.mp3Kbps,selection.track.channels,Binder())
-                        ensureActive()
-                        if(result != 0 || out.length() == 0L) throw BiliException("音频转换失败，请检查源文件后重试。")
-                    } finally { cancellation.cancel() }
+                while (!process.waitFor(200, TimeUnit.MILLISECONDS)) ensureActive()
+                ensureActive()
+                if (process.exitValue() != 0 || staged.length() == 0L)
+                    throw BiliException("格式转换失败，请检查源文件后重试。")
+                Files.move(staged.toPath(), out.toPath(), REPLACE_EXISTING)
+            } finally {
+                if (process.isAlive) {
+                    process.destroyForcibly()
+                    process.waitFor(2, TimeUnit.SECONDS)
                 }
-            } finally { inputs.forEach { it.close() } }
-        } finally { if(bound) context.unbindService(conn) }
+            }
+        } finally {
+            work.deleteRecursively()
+        }
     }
 }
 

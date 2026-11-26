@@ -14,6 +14,16 @@ class YoutubeTest {
         assertEquals(YoutubeLink(null, "PLtest"), YoutubeLink.parse("https://youtube.com/playlist?list=PLtest"))
         assertNull(YoutubeLink.parse("https://youtube.com.example.org/watch?v=jNQXAC9IVRw"))
     }
+    @Test fun liveReplaySharesUseTheWatchIdentity() {
+        val share = "https://www.youtube.com/live/N2rr3OXrR8s?si=Wn4JMg9g1UfVRoMg"
+        val video = YoutubeLink("N2rr3OXrR8s", null)
+        assertEquals(listOf(share), Links.supported("回放 $share"))
+        assertEquals(video, YoutubeLink.parse(share))
+        assertEquals(video, YoutubeLink.parse("https://m.youtube.com/live/N2rr3OXrR8s/"))
+        assertEquals(video.copy(playlist = "PLtest"), YoutubeLink.parse("$share&list=PLtest"))
+        for (path in listOf("/live/?list=PLtest", "/live/not-a-video-id", "/live/N2rr3OXrR8s/extra"))
+            assertNull(YoutubeLink.parse("https://www.youtube.com$path"))
+    }
     @Test fun guestCompatibilityAndQuality() {
         val item = MediaItem("yt:jNQXAC9IVRw", "video", "video", "video", 0, "", 0, 0, 1, youtubeId = "jNQXAC9IVRw")
         val choices = listOf(360, 720, 1080, 1440).map { Variant(it, "${it}p", formatId = "test") }

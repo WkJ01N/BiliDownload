@@ -52,7 +52,7 @@ public sealed partial class QueuePage : Page
         try { await App.Services.Queue.RemoveAsync(item.Id); }
         catch { Show("记录移除失败，请重试。", InfoBarSeverity.Error); }
     }
-    private void YoutubeSettings_Click(object sender, RoutedEventArgs e) => App.Main.OpenYoutubeSettings();
+    private void YoutubeSettings_Click(object sender, RoutedEventArgs e) { if (Item(sender).FailureKind == BiliErrorKind.XSession) App.Main.OpenXSettings(); else App.Main.OpenYoutubeSettings(); }
     private async void Login_Click(object sender, RoutedEventArgs e)
     {
         var result = await LoginFlow.ShowAsync(XamlRoot);
@@ -60,7 +60,11 @@ public sealed partial class QueuePage : Page
         if (AuthRecovery.LoginMessage(result, forTask: true) is { } message) Show(message, result.Outcome == LoginOutcome.Success ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
     }
     private void AudioSettings_Click(object sender, RoutedEventArgs e) => App.Main.OpenAudioSettings();
-    private async void AudioTrack_Click(object sender, RoutedEventArgs e) => await App.Main.ChooseAudioAsync(Item(sender).Item.PageUrl);
+    private async void Reparse_Click(object sender, RoutedEventArgs e)
+    {
+        var task = Item(sender);
+        await App.Main.ReparseAsync(task.Item.PageUrl, task.Item.X == null || task.AudioOutput != null);
+    }
     private async void Copy_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -80,7 +84,7 @@ public sealed partial class QueuePage : Page
     private void Open_Click(object sender, RoutedEventArgs e)
     {
         try { Process.Start(new ProcessStartInfo(ExistingPath(sender)) { UseShellExecute = true }); }
-        catch (Exception) { Show("暂时无法打开文件，请确认下载完成且已安装播放器。", InfoBarSeverity.Warning); }
+        catch (Exception) { Show("暂时无法打开文件，请检查默认打开方式。", InfoBarSeverity.Warning); }
     }
     private static string ExistingPath(object sender)
     {

@@ -16,7 +16,7 @@ jobs:
           python ./scripts/build-theme.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           git diff --exit-code -- src/BiliDownload.Windows/RadixTheme.xaml android/app/src/main/java/io/github/bilidownload/RadixTheme.kt
-      - name: Test YouTube format selection, playlists and account recovery
+      - name: Test YouTube and X parsing, formats and account recovery
         run: python -B -m unittest discover -s tests/youtube
       - name: Verify pinned optional YouTube component
         run: python scripts/prepare-youtube.py windows
@@ -59,7 +59,7 @@ jobs:
           log-accepted-android-sdk-licenses: false
       - name: Install SDK
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
-      - name: Cache native audio tools
+      - name: Cache native media tools
         id: audio-cache
         uses: actions/cache@v4
         with:
@@ -68,7 +68,7 @@ jobs:
             .build/audio/arm64-v8a/ffmpeg/COPYING.LGPLv2.1
             .build/audio/arm64-v8a/lame/COPYING
           key: android-audio-ndk28-${{ hashFiles('scripts/build-android-audio.sh', 'packaging/audio.json') }}
-      - name: Build optional audio processor
+      - name: Build media processor
         if: steps.audio-cache.outputs.cache-hit != 'true'
         run: |
           sdkmanager "ndk;28.2.13676358"
@@ -86,7 +86,7 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Verify audio processing and publication on Android
+      - name: Verify audio publication and GIF conversion on Android
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -95,7 +95,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: BiliDownload-Android-preview
-          path: |
-            android/app/build/outputs/apk/debug/app-debug.apk
-            android/youtube/build/outputs/apk/debug/youtube-debug.apk
-            android/audio/build/outputs/apk/debug/audio-debug.apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk

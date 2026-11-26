@@ -31,10 +31,22 @@ class DownloadEngine(private val context: Context) {
         BiliApplication.store.update(id) { if (it.state == "Completed") it else it.copy(state = if(canceled) "Canceled" else "Paused", message = if(canceled) "已取消" else "已暂停") }
         if(canceled && BiliApplication.store.get(id)?.state == "Canceled") {
             File(context.cacheDir, "downloads/$id").deleteRecursively()
-            if (BiliApplication.store.get(id)?.item?.youtubeId != null) BiliApplication.youtube.clean(id)
+            if (BiliApplication.store.get(id)?.item?.let { it.youtubeId != null || it.x != null } == true) BiliApplication.youtube.clean(id)
+        }
+        finishDocuments(id)
+    }
+    suspend fun run(id: String, notify: (DownloadEntry) -> Unit) {
+        try { limit.withPermit { runEntry(id,notify) } }
+        finally { withContext(NonCancellable + Dispatchers.IO) { coroutineScope { finishDocuments(id) } } }
+    }
+    private suspend fun finishDocuments(dependency: String) {
+        val rows = BiliApplication.store.entries.value
+        for(row in rows) {
+            if(row.state == "Queued" && dependency in row.xDestination?.dependencies.orEmpty() && !row.waitsForAttachments(rows))
+                limit.withPermit { runEntry(row.id) {} }
         }
     }
-    suspend fun run(id: String, notify: (DownloadEntry) -> Unit) = limit.withPermit {
+    private suspend fun runEntry(id: String, notify: (DownloadEntry) -> Unit) {
         locks.getOrPut(id) { Mutex() }.withLock {
             val job = currentCoroutineContext().job; running[id] = job
             fun update(state: String = "Downloading", progress: Float? = null, message: String) {
@@ -48,6 +60,33 @@ class DownloadEngine(private val context: Context) {
                 currentCoroutineContext().ensureActive(); update(message = "获取媒体源")
                 val selection = entry.audioOutput
                 if (selection?.needsProcessor == true) BiliApplication.audio.requireInstalled()
+                if(entry.item.x != null) {
+                    val x = entry.item.x
+                    val name = requireNotNull(entry.outputFileName)
+                    val document = x.document
+                    val file = if(document != null) {
+                        val files = entry.xDestination?.dependencies.orEmpty().mapNotNull(BiliApplication.store::get)
+                            .filter { it.state == "Completed" && it.xDestination?.tree == entry.xDestination?.tree && it.xDestination?.grouped == true }
+                            .filter { it.item.x?.handle == x.handle && it.item.x.postId == x.postId }.sortedBy { it.item.index }
+                            .mapNotNull { saved -> saved.finalFileName?.let { it to saved.mime } }
+                        File(directory,"post.md").apply { writeText(document.markdown(files),Charsets.UTF_8) }
+                    } else {
+                        if(name.endsWith(".gif")) BiliApplication.audio.requireGif()
+                        val (source,_) = BiliApplication.youtube.fetch(entry,directory) { update(progress=it*.95f,message="正在下载 X 附件") }
+                        when {
+                            selection != null -> File(directory,"audio"+selection.extension).also { exportAudio(listOf(source),it,selection,entry.item) }
+                            name.endsWith(".gif") -> File(directory,"animation.gif").also { update("Merging", .96f,"正在转换 GIF"); BiliApplication.audio.convertGif(source,it) }
+                            else -> source
+                        }
+                    }
+                    currentCoroutineContext().ensureActive()
+                    val uri = publish(file,name,entry.mime,entry.xDestination,x)
+                    BiliApplication.store.update(id) { it.copy(state="Completed", progress=1f, message="下载完成", uri=uri.toString(), finalFileName=runCatching { resolverName(uri) }.getOrNull() ?: name) }
+                    BiliApplication.store.get(id)?.let(notify)
+                    directory.deleteRecursively()
+                    if(document == null) BiliApplication.youtube.clean(id)
+                    return@withLock
+                }
                 var videos = emptyList<File>(); var audio: File? = null
                 if (entry.item.youtubeId != null) {
                     val tracks = BiliApplication.youtube.fetch(entry, directory) { fraction -> update(progress = fraction * .95f, message = if(selection != null) "正在下载音轨" else "正在下载 YouTube 视频") }
@@ -203,20 +242,40 @@ class DownloadEngine(private val context: Context) {
     }
     private val publishLock = Any()
     private fun resolverName(uri: Uri): String? = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { if(it.moveToFirst()) it.getString(0) else null }
-    internal fun publish(file: File, requested: String, audioMime: String? = null): Uri = synchronized(publishLock) {
-        val collection = if(audioMime == null) MediaStore.Video.Media.EXTERNAL_CONTENT_URI else MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-        val directory = (if(audioMime == null) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_MUSIC) + "/BiliDownload"
+    internal fun publish(file: File, requested: String, audioMime: String? = null, destination: XDestination? = null, x: XContent? = null): Uri = synchronized(publishLock) {
+        val mime = audioMime ?: "video/mp4"
+        val folder = when {
+            mime.startsWith("audio/") -> Environment.DIRECTORY_MUSIC
+            mime.startsWith("video/") -> Environment.DIRECTORY_MOVIES
+            mime.startsWith("image/") -> Environment.DIRECTORY_PICTURES
+            else -> Environment.DIRECTORY_DOWNLOADS
+        }
+        val postFolder = if(destination?.grouped == true && x != null) Links.safeName(x.handle+"-"+x.postId) else null
+        val collection = when {
+            postFolder != null || folder == Environment.DIRECTORY_DOWNLOADS -> MediaStore.Downloads.EXTERNAL_CONTENT_URI
+            folder == Environment.DIRECTORY_MUSIC -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+            folder == Environment.DIRECTORY_PICTURES -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            else -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        }
+        val directory = if(postFolder == null) "$folder/BiliDownload" else Environment.DIRECTORY_DOWNLOADS+"/BiliDownload/"+postFolder
         var name = requested
         val resolver = context.contentResolver
-        val tree = context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("directory", null)
+        val tree = if(destination != null) destination.tree else context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("directory", null)
+        val parent = tree?.let {
+            val root = DocumentFile.fromTreeUri(context, Uri.parse(it)) ?: throw IOException("目录不可用")
+            if(destination == null) root else {
+                val child = postFolder ?: folder
+                (root.findFile(child) ?: root.createDirectory(child))?.takeIf { it.isDirectory } ?: throw IOException("无法创建子目录")
+            }
+        }
         val occupied = mutableSetOf<String>()
-        if(tree != null) DocumentFile.fromTreeUri(context, Uri.parse(tree))?.listFiles()?.mapNotNullTo(occupied) { it.name }
+        if(parent != null) parent.listFiles().mapNotNullTo(occupied) { it.name }
         else resolver.query(collection, arrayOf(MediaStore.Video.Media.DISPLAY_NAME), "${MediaStore.Video.Media.RELATIVE_PATH} = ?", arrayOf("$directory/"), null)?.use { c -> while(c.moveToNext()) occupied += c.getString(0) }
         var suffix = 0
         while(name in occupied) { suffix++; name = FileNaming.candidate(requested, suffix) }
-        val uri = if(tree != null) DocumentFile.fromTreeUri(context, Uri.parse(tree))?.createFile(audioMime ?: "video/mp4", name)?.uri ?: throw IOException("目标目录不可写")
+        val uri = if(parent != null) parent.createFile(mime, name)?.uri ?: throw IOException("目标目录不可写")
         else resolver.insert(collection, ContentValues().apply {
-            put(MediaStore.Video.Media.DISPLAY_NAME, name); put(MediaStore.Video.Media.MIME_TYPE, audioMime ?: "video/mp4")
+            put(MediaStore.Video.Media.DISPLAY_NAME, name); put(MediaStore.Video.Media.MIME_TYPE, mime)
             put(MediaStore.Video.Media.RELATIVE_PATH, directory); put(MediaStore.Video.Media.IS_PENDING, 1)
         }) ?: throw IOException("无法创建视频文件")
         try {

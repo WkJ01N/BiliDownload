@@ -26,7 +26,5 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Android build or checks failed.' }
     $outputDirectory = Join-Path $projectRoot 'artifacts/android'
     New-Item -ItemType Directory -Force $outputDirectory | Out-Null
-    Copy-Item -LiteralPath app/build/outputs/apk/debug/app-debug.apk -Destination (Join-Path $outputDirectory 'BiliDownload-0.3.0-preview.apk') -Force
-    Copy-Item -LiteralPath youtube/build/outputs/apk/debug/youtube-debug.apk -Destination (Join-Path $outputDirectory 'BiliDownload-0.3.0-youtube.apk') -Force
-    Copy-Item -LiteralPath audio/build/outputs/apk/debug/audio-debug.apk -Destination (Join-Path $outputDirectory 'BiliDownload-0.3.0-audio.apk') -Force
+    Copy-Item -LiteralPath app/build/outputs/apk/debug/app-debug.apk -Destination (Join-Path $outputDirectory 'BiliDownload-0.4.0-preview.apk') -Force
 } finally { Pop-Location }

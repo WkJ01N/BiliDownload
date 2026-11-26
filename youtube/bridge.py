@@ -43,8 +43,12 @@ def classify(message, authenticated):
     text = message.lower()
     if "drm" in text or "digital rights" in text:
         return "Protected"
-    if any(term in text for term in ("429", "too many requests", "rate-limit", "not a bot", "not a robot")):
+    if any(term in text for term in ("429", "too many requests", "rate-limit")):
         return "Restricted"
+    if "not a bot" in text or "not a robot" in text:
+        return "VerifyAccount" if "sign in" in text or "log in" in text else "Restricted"
+    if "this live event will begin" in text or "this live event will start" in text:
+        return "Live"
     if any(term in text for term in ("members-only", "members only", "join this channel", "membership level", "members of this channel")):
         return "Membership" if authenticated else "SessionRequired"
     if any(term in text for term in ("login", "log in", "sign in", "private video", "cookies are no longer valid")):
@@ -213,6 +217,16 @@ def fetch_tracks(ydl, info, choices, request, work, report):
 
 
 def execute(request, qjs, work):
+    if request.get("platform") == "x":
+        # Isolated Windows Python omits the installed script directory from sys.path.
+        script_dir = str(Path(__file__).resolve().parent)
+        if script_dir not in sys.path:
+            sys.path.append(script_dir)
+        from xpost import XError, execute_x
+        try:
+            return execute_x(request, work, ydl_module.YoutubeDL, QuietLogger(), emit)
+        except XError as error:
+            raise EngineError(str(error)) from None
     operation = request["op"]
     identifier = request["id"]
     listing = operation == "playlist"
@@ -240,7 +254,9 @@ def execute(request, qjs, work):
                     raise EngineError("SessionExpired")
                 if listing:
                     return playlist_page(info, start)
-                if info.get("live_status") in ("is_live", "is_upcoming", "post_live"):
+                if info.get("live_status") == "post_live":
+                    raise EngineError("ReplayProcessing")
+                if info.get("live_status") in ("is_live", "is_upcoming"):
                     raise EngineError("Live")
                 choices = audio_choices(info) if audio_only else compatible(info)
                 if operation == "inspect" and not audio_only and not choices and audio_choices(info):
@@ -256,9 +272,9 @@ def execute(request, qjs, work):
                 return fetch_tracks(ydl, info, choices, request, work, emit)
         except Exception as exc:
             kind = str(exc) if isinstance(exc, EngineError) else classify(str(exc), authenticated)
-            if authenticated and opts["logger"].invalid_session and kind in ("Membership", "SessionRequired"):
+            if authenticated and opts["logger"].invalid_session and kind in ("Membership", "SessionRequired", "VerifyAccount"):
                 kind = "SessionExpired"
-            if kind == "SessionRequired" and cookies and not authenticated:
+            if kind in ("SessionRequired", "VerifyAccount") and cookies and not authenticated:
                 continue
             raise EngineError(kind) from None
 

@@ -15,6 +15,7 @@ class BiliApplication : Application() {
     override fun onCreate() {
         super.onCreate(); app = this
         getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel("downloads", "媒体下载", NotificationManager.IMPORTANCE_LOW))
+        components = MediaComponents(this)
         audio = AudioProcessor(this)
         youtube = YoutubeClient(this, Session(this, "youtube-session", "BiliDownloadYoutubeSession")); session = Session(this); api = BiliApi(session); store = TaskStore(this); engine = DownloadEngine(this)
     }
@@ -22,6 +23,7 @@ class BiliApplication : Application() {
         lateinit var app: BiliApplication; private set
         lateinit var session: Session; private set
         lateinit var audio: AudioProcessor; private set
+        lateinit var components: MediaComponents; private set
         lateinit var youtube: YoutubeClient; private set
         lateinit var api: BiliApi; private set
         lateinit var store: TaskStore; private set

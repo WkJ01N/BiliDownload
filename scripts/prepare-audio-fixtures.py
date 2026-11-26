@@ -15,3 +15,6 @@ media("opus.webm", *tone, "-c:a", "libopus")
 media("lossless.m4a", *tone, "-c:a", "flac", "-strict", "-2", "-f", "mp4")
 media("dolby.m4a", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=5.1", "-t", "1", "-c:a", "eac3", "-f", "mp4")
 media("mixed.mp4", "-f", "lavfi", "-i", "color=size=32x32:duration=1", "-i", str(out / "aac.m4a"), "-c:v", "mpeg4", "-c:a", "copy", "-shortest")
+h264 = "libopenh264" if sys.platform == "win32" else "libx264"
+media("animation.mp4", "-f", "lavfi", "-i", "testsrc2=size=64x48:rate=15:duration=1",
+      "-c:v", h264, "-pix_fmt", "yuv420p", "-an")
