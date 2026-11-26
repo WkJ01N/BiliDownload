@@ -6,13 +6,15 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
 import java.nio.file.Files
 import java.util.UUID
 import java.util.zip.ZipFile
 
 internal class LocalMediaEngine(
     private val context: Context,
-    private val requireArchive: (Boolean) -> File = { BiliApplication.components.requireArchive(it) }
+    private val requireArchive: (Boolean) -> File = { BiliApplication.components.requireArchive(it) },
+    private val testDiagnostics: ((String) -> Unit)? = null
 ) {
     private val slots = Semaphore(3)
     private val nativeDir = File(context.applicationInfo.nativeLibraryDir)
@@ -25,7 +27,7 @@ internal class LocalMediaEngine(
     @Synchronized private fun prepareRuntime(): File {
         val payload = File(nativeDir, "libpython.zip.so")
         val version = context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime
-        val cache = File(context.codeCacheDir, "media-engine")
+        val cache = File(context.noBackupFilesDir, "media-engine")
         val ready = File(cache, "$version-${payload.length()}")
         if (File(ready, "bridge.py").isFile && File(ready, "xpost.py").isFile && File(ready, "usr/etc/tls/cert.pem").isFile) return ready
         if (ready.exists()) check(ready.deleteRecursively())
@@ -52,6 +54,7 @@ internal class LocalMediaEngine(
                     error: (String) -> BiliException): JSONObject = slots.withPermit {
         val x = request.optString("platform") == "x"
         val archive = requireArchive(x)
+        val diagnostics = testDiagnostics?.let { File.createTempFile("runtime-diagnostics-", ".log", context.cacheDir) }
         try {
             val runtime = prepareRuntime()
             currentCoroutineContext().ensureActive()
@@ -59,13 +62,14 @@ internal class LocalMediaEngine(
             val builder = ProcessBuilder(File(nativeDir, "libpython.so").path, "-B", "-s", "-X", "utf8",
                 File(runtime, "bridge.py").path, archive.absolutePath, File(nativeDir, "libqjs.so").path)
                 .directory(directory ?: context.cacheDir)
-                .redirectError(ProcessBuilder.Redirect.to(File("/dev/null")))
+                .redirectError(ProcessBuilder.Redirect.to(diagnostics ?: File("/dev/null")))
             builder.environment().apply {
                 put("PYTHONHOME", home.path)
                 put("LD_LIBRARY_PATH", File(home, "lib").path)
                 put("SSL_CERT_FILE", File(home, "etc/tls/cert.pem").path)
                 put("TMPDIR", context.cacheDir.path)
                 put("HOME", context.noBackupFilesDir.path)
+                if (diagnostics != null) put("BILIDOWNLOAD_TEST_DIAGNOSTICS", "1")
             }
             val process = builder.start()
             try {
@@ -104,7 +108,17 @@ internal class LocalMediaEngine(
             throw e
         } catch (e: Exception) {
             currentCoroutineContext().ensureActive()
+            testDiagnostics?.invoke(e.toString())
             throw error("Engine")
+        } finally {
+            diagnostics?.let {
+                it.reader().use { reader ->
+                    val buffer = CharArray(4096)
+                    val size = reader.read(buffer)
+                    if (size > 0) testDiagnostics?.invoke(String(buffer, 0, size))
+                }
+                it.delete()
+            }
         }
     }
 }
@@ -149,6 +163,10 @@ internal fun unpackPython(payload: File, destination: File) {
         require(target.isFile) { "Missing library target" }
         // The linker needs the same ELF under each SONAME. Hard links also keep
         // the extracted directory free of symbolic links during cleanup.
-        Files.createLink(alias.toPath(), target.toPath())
+        try {
+            Files.createLink(alias.toPath(), target.toPath())
+        } catch (_: IOException) {
+            Files.copy(target.toPath(), alias.toPath())
+        }
     }
 }

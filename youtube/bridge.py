@@ -288,4 +288,6 @@ if __name__ == "__main__":
     except EngineError as error:
         emit(error=str(error))
     except Exception:
+        if __import__("os").environ.get("BILIDOWNLOAD_TEST_DIAGNOSTICS") == "1":
+            __import__("traceback").print_exc()
         emit(error="Engine")

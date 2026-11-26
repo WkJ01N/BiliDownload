@@ -22,7 +22,8 @@ class MediaRuntimeIntegrationTest {
                 it.write("class YoutubeDL: pass\n".toByteArray())
                 it.closeEntry()
             }
-            val runtime = LocalMediaEngine(context) { archive }
+            val diagnostics = mutableListOf<String>()
+            val runtime = LocalMediaEngine(context, requireArchive = { archive }, testDiagnostics = { diagnostics += it })
             try {
                 withTimeout(30_000) {
                     runtime.run(JSONObject().put("platform", "x").put("op", "inspect").put("id", "invalid"),
@@ -30,7 +31,7 @@ class MediaRuntimeIntegrationTest {
                 }
                 fail("The bridge should reject the invalid post ID")
             } catch (error: BiliException) {
-                assertEquals("InvalidLink", error.message)
+                assertEquals(diagnostics.joinToString("\n"), "InvalidLink", error.message)
             }
         } finally {
             archive.delete()
