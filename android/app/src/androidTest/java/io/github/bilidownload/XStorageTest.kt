@@ -3,13 +3,15 @@ package io.github.bilidownload
 import android.net.Uri
 import android.provider.MediaStore
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
 import java.util.UUID
 
 class XStorageTest {
-    @Test fun archiveAndClassifiedMediaArePublishedWithActualNames() {
+    @Test fun archiveAndClassifiedMediaArePublishedWithActualNames(): Unit = runBlocking(Dispatchers.IO) {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         val resolver = ctx.contentResolver
         val id = UUID.randomUUID().toString()

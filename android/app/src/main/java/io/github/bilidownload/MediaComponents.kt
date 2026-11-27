@@ -17,8 +17,12 @@ import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URI
 import java.nio.file.Files
+import java.nio.file.FileVisitResult
+import java.nio.file.Path
+import java.nio.file.SimpleFileVisitor
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
+import java.nio.file.attribute.BasicFileAttributes
 import java.security.MessageDigest
 
 data class ComponentState(
@@ -26,10 +30,35 @@ data class ComponentState(
     val downloading: Boolean = false,
     val bytes: Long = 0,
     val total: Long? = null,
-    val error: String? = null
+    val error: String? = null,
+    val checking: Boolean = false
 )
 
 internal class ComponentIntegrityException : IOException()
+
+private val componentDigest = Regex("[a-f0-9]{64}")
+
+internal fun deleteComponentFiles(file: File) {
+    runCatching {
+        Files.walkFileTree(file.toPath(), object : SimpleFileVisitor<Path>() {
+            override fun visitFile(path: Path, attributes: BasicFileAttributes): FileVisitResult {
+                Files.deleteIfExists(path)
+                return FileVisitResult.CONTINUE
+            }
+            override fun postVisitDirectory(directory: Path, error: IOException?): FileVisitResult {
+                if (error != null) throw error
+                Files.deleteIfExists(directory)
+                return FileVisitResult.CONTINUE
+            }
+        })
+    }
+}
+
+internal fun pruneComponentArchives(root: File, currentDigest: String) {
+    if (Files.isSymbolicLink(root.toPath())) return
+    root.listFiles()?.filter { it.name != currentDigest && componentDigest.matches(it.name) }
+        ?.forEach(::deleteComponentFiles)
+}
 
 internal class VerifiedComponentArchive(private val size: Long, private val sha256: String) {
     private fun digest(input: InputStream, onChunk: (ByteArray, Int, Long) -> Unit): Boolean {
@@ -75,47 +104,61 @@ class MediaComponents(context: Context) {
     private val sha256 = manifest.getString("sha256")
     private val url = URI.create(manifest.getString("url"))
     private val verifier = VerifiedComponentArchive(downloadBytes, sha256)
-    private val archive = File(context.noBackupFilesDir, "components/media/$sha256/yt-dlp")
+    private val archiveRoot = File(context.noBackupFilesDir, "components/media")
+    private val archive = File(archiveRoot, "$sha256/yt-dlp")
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val mutable = MutableStateFlow(ComponentState())
+    private val mutable = MutableStateFlow(ComponentState(checking = true))
     val state = mutable.asStateFlow()
-    @Volatile private var verified = false
+    private var verifiedAt: Long? = null
     private var download: Job? = null
 
     init {
         scope.launch {
-            if (verifier.verified(archive)) synchronized(this@MediaComponents) {
-                verified = true
-                if (!mutable.value.downloading) mutable.value = ComponentState(ready = true)
+            synchronized(this@MediaComponents) {
+                if (download == null) {
+                    val ready = checkArchive()
+                    if (!ready) archive.delete()
+                    clearPartialDownloads()
+                    mutable.value = ComponentState(ready = ready)
+                }
             }
+            pruneComponentArchives(archiveRoot, sha256)
+            LocalMediaEngine.pruneObsoleteRuntimes(context)
         }
     }
 
-    fun requireArchive(x: Boolean = false): File {
-        if (archive.isFile && archive.length() == downloadBytes && (verified || verifier.verified(archive))) {
-            synchronized(this) {
-                verified = true
-                if (!mutable.value.ready && !mutable.value.downloading) mutable.value = ComponentState(ready = true)
-            }
-            return archive
-        }
-        synchronized(this) {
-            verified = false
-            if (mutable.value.ready && !mutable.value.downloading) mutable.value = ComponentState()
-        }
+    @Synchronized fun requireArchive(x: Boolean = false): File {
+        val ready = checkArchive()
+        if (!mutable.value.downloading) mutable.value = ComponentState(ready = ready)
+        if (ready) return archive
         throw BiliException("请先下载媒体解析组件。", if (x) BiliErrorKind.XComponent else BiliErrorKind.YoutubeComponent)
     }
 
+    private fun checkArchive(): Boolean {
+        val stamp = archive.lastModified()
+        if (archive.isFile && archive.length() == downloadBytes &&
+            (verifiedAt == stamp || verifier.verified(archive))) {
+            verifiedAt = stamp
+            return true
+        }
+        verifiedAt = null
+        return false
+    }
+
+    private fun clearPartialDownloads() {
+        archive.parentFile?.listFiles { file -> file.name.startsWith("media-") && file.extension == "part" }
+            ?.forEach { it.delete() }
+    }
+
     @Synchronized fun startInstall() {
-        if (download != null || (mutable.value.ready && archive.isFile)) return
+        if (download != null || mutable.value.checking || (mutable.value.ready && archive.isFile)) return
         mutable.value = ComponentState(downloading = true, total = downloadBytes)
         val job = scope.launch {
             var result = ComponentState()
             try {
                 ensureActive()
                 if (!verifier.verified(archive)) {
-                    archive.parentFile?.listFiles { file -> file.name.startsWith("media-") && file.extension == "part" }
-                        ?.forEach { it.delete() }
+                    clearPartialDownloads()
                     openDownload().use { stream ->
                         verifier.install(stream, archive) { read ->
                             ensureActive()
@@ -123,7 +166,6 @@ class MediaComponents(context: Context) {
                         }
                     }
                 }
-                verified = true
                 result = ComponentState(ready = true)
             } catch (_: CancellationException) {
                 result = ComponentState(error = "已取消下载。")
@@ -133,6 +175,7 @@ class MediaComponents(context: Context) {
                 result = ComponentState(error = "组件下载失败。请检查网络和可用存储空间后重试。")
             } finally {
                 synchronized(this@MediaComponents) {
+                    if (result.ready) verifiedAt = archive.lastModified()
                     mutable.value = result
                     download = null
                 }

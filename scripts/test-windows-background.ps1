@@ -23,7 +23,7 @@ public interface NotificationCallback {
 }
 '@
 $projectRoot = Split-Path -Parent $PSScriptRoot
-if (-not $PackageDirectory) { $PackageDirectory = Join-Path $projectRoot 'artifacts/windows-0.4.0' }
+if (-not $PackageDirectory) { $PackageDirectory = Join-Path $projectRoot 'artifacts/windows-0.4.1' }
 $testRoot = Join-Path $projectRoot ('.build/background-validation/' + [Guid]::NewGuid().ToString('N'))
 $appDirectory = Join-Path $testRoot 'app'
 New-Item -ItemType Directory -Force $testRoot | Out-Null

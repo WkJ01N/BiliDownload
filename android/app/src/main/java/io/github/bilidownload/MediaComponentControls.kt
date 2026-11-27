@@ -16,6 +16,7 @@ internal fun MediaComponentSetting(state: ComponentState, open: () -> Unit) {
         Text("YouTube / X 解析组件", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
         when {
             state.ready -> Text("已就绪", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            state.checking -> CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 1.dp)
             else -> TextButton(onClick = open) {
                 Text(when {
                     state.downloading -> "查看进度"

@@ -47,4 +47,21 @@ class MediaComponentsTest {
             assertTrue(folder.root.list()!!.isEmpty())
         }
     }
+
+    @Test fun removesOnlyRetiredResolverVersions() {
+        val current = "a".repeat(64)
+        val outdated = folder.newFolder("components", "media", "b".repeat(64))
+        val root = outdated.parentFile!!
+        val active = root.resolve(current).apply { mkdir() }.resolve("yt-dlp").apply { writeText("current") }
+        val unrelated = root.resolve("future-layout")
+        unrelated.writeText("other")
+        val userData = folder.newFile("tasks.db")
+
+        pruneComponentArchives(root, current)
+
+        assertFalse(outdated.exists())
+        assertEquals("current", active.readText())
+        assertEquals("other", unrelated.readText())
+        assertTrue(userData.isFile)
+    }
 }

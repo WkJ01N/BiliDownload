@@ -13,6 +13,7 @@ public sealed partial class SettingsPage : Page
     public SettingsPage()
     {
         InitializeComponent(); var settings = App.Services.Settings;
+        VersionLabel.Text = $"BiliDownload  Windows 预览版 {typeof(SettingsPage).Assembly.GetName().Version?.ToString(3)}";
         var labels = new[] { "默认名称", "标题", "分项标题", "序号", "BV号", "编号" };
         NamingVariables.ItemsSource = FileNaming.Variables.Select((v, i) => new NamingVariable(labels[i], "{" + v + "}")); NamingTemplate.Text = settings.FileNameTemplate; CloseBehaviorBox.SelectedValue = settings.CloseBehavior;
         DirectoryBox.Text = settings.DownloadDirectory; FfmpegBox.Text = settings.FfmpegPath;

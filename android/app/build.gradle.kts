@@ -10,8 +10,8 @@ val audioLibraries = rootProject.layout.projectDirectory.dir("audio/build/genera
 android {
     namespace = "io.github.bilidownload"
     compileSdk = 36
-    defaultConfig { applicationId = "io.github.bilidownload"; minSdk = 29; targetSdk = 36; versionCode = 11; versionName = "0.4.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
-    buildFeatures { compose = true }
+    defaultConfig { applicationId = "io.github.bilidownload"; minSdk = 29; targetSdk = 36; versionCode = 12; versionName = "0.4.1"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
+    buildFeatures { compose = true; buildConfig = true }
     sourceSets["androidTest"].assets.srcDir("build/generated/audioFixtures")
     sourceSets["main"].assets.srcDir(mediaAssets.get().asFile)
     sourceSets["main"].jniLibs.srcDirs(runtimeOutput.get().asFile, audioLibraries.asFile)

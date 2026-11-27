@@ -24,12 +24,31 @@ internal class LocalMediaEngine(
         return File(context.cacheDir, "downloads/$id")
     }
 
-    @Synchronized private fun prepareRuntime(): File {
+    companion object {
+        private val runtimeLock = Any()
+        private val generatedRuntimeName = Regex("\\d+-\\d+|preparing")
+
+        private fun currentRuntime(context: Context): File {
+            val payload = File(context.applicationInfo.nativeLibraryDir, "libpython.zip.so")
+            val version = context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime
+            return File(context.noBackupFilesDir, "media-engine/$version-${payload.length()}")
+        }
+
+        fun pruneObsoleteRuntimes(context: Context) = synchronized(runtimeLock) {
+            val runtime = currentRuntime(context)
+            val roots = listOf(runtime.parentFile!!, File(context.codeCacheDir, "media-engine"))
+            roots.filterNot { Files.isSymbolicLink(it.toPath()) }.forEach { root ->
+                root.listFiles()?.filter { it != runtime && generatedRuntimeName.matches(it.name) }
+                    ?.forEach(::deleteComponentFiles)
+            }
+        }
+    }
+
+    private fun prepareRuntime(): File = synchronized(runtimeLock) {
         val payload = File(nativeDir, "libpython.zip.so")
-        val version = context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime
-        val cache = File(context.noBackupFilesDir, "media-engine")
-        val ready = File(cache, "$version-${payload.length()}")
-        if (File(ready, "bridge.py").isFile && File(ready, "xpost.py").isFile && File(ready, "usr/etc/tls/cert.pem").isFile) return ready
+        val ready = currentRuntime(context)
+        val cache = ready.parentFile!!
+        if (File(ready, "bridge.py").isFile && File(ready, "xpost.py").isFile && File(ready, "usr/etc/tls/cert.pem").isFile) return@synchronized ready
         if (ready.exists()) check(ready.deleteRecursively())
         val staging = File(cache, "preparing")
         staging.deleteRecursively()
@@ -46,8 +65,7 @@ internal class LocalMediaEngine(
         } finally {
             if (staging.exists()) staging.deleteRecursively()
         }
-        cache.listFiles()?.filter { it != ready }?.forEach { it.deleteRecursively() }
-        return ready
+        ready
     }
 
     suspend fun run(request: JSONObject, directory: File?, progress: (Float) -> Unit,

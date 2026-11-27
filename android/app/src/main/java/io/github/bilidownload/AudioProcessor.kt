@@ -46,7 +46,12 @@ class AudioProcessor(private val context: Context) {
             "-loop", "0"))
     }
 
-    private suspend fun process(files: List<File>, out: File, muxer: String, options: List<String>) = withContext(Dispatchers.IO) {
+    suspend fun muxVideo(video: File, audio: File, output: File) {
+        process(listOf(video), output, "mp4", listOf("-map", "0:v:0", "-map", "1:a:0", "-c", "copy", "-sn", "-dn"), audio)
+    }
+
+    private suspend fun process(files: List<File>, out: File, muxer: String, options: List<String>,
+                                audio: File? = null) = withContext(Dispatchers.IO) {
         requireInstalled()
         require(files.isNotEmpty())
         val work = Files.createTempDirectory(context.cacheDir.toPath(), "convert-").toFile()
@@ -64,6 +69,7 @@ class AudioProcessor(private val context: Context) {
                 })
                 command += listOf("-f", "concat", "-safe", "0", "-i", playlist.absolutePath)
             }
+            if (audio != null) command += listOf("-protocol_whitelist", "file", "-i", audio.absolutePath)
             val staged = File(work, "converted")
             command += options
             command += listOf("-f", muxer, staged.absolutePath)

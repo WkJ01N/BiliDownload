@@ -11,7 +11,13 @@ B 站、YouTube、YouTube Music 和 X（推特）内容下载工具。Windows �
 - 动图默认保存为无声 MP4，也可以转换为循环 GIF。Android 主应用内置 GIF 转换所需的工具，Windows 使用完整版 FFmpeg。
 - 公开帖子可游客解析。需要登录时，在设置中导入本人有权使用的 X 会话文件（Netscape cookies.txt）后重试。X 会话独立保存在本机。
 
-## 当前版本 0.4.0
+## 0.4.1 更新
+
+- 升级时清理过期的解析组件和运行时缓存，保留校验通过的组件。若仍安装了旧版独立扩展，可在设置中打开系统卸载确认。设置中的版本号与 APK 版本同步。
+- 首次下载并校验解析组件后继续当前操作。批量链接并行解析，短时缓存成功结果，减少重复的画质和音轨查询。
+- 兼容的 MP4 和独立 AAC 音轨省去重新封装。分离的音画轨由内置工具无损合并，再保存到媒体库或所选目录。
+
+## 下载和音频功能
 
 - 在解析页选择「视频」或「音频」。YouTube Music 的歌曲和播放列表默认选择音频。音质默认自动最高，展开条目的音质菜单可以改选。只提供音画合并源时，页面会显示整段下载量，点击下载即确认。
 - 「保留原音」输出 M4A、Ogg Opus 或 FLAC，并保留原始声道。MP3 提供 320、192、128 kb/s 三档。音频写入来源提供的音乐标签与封面。
@@ -78,13 +84,13 @@ B 站、YouTube、YouTube Music 和 X（推特）内容下载工具。Windows �
 
 完整验证范围及尚需真机检查的项目见 [VALIDATION.md](VALIDATION.md)。
 
-Android 预览版使用单一 APK，可在应用内下载解析组件。[下载 0.4.0](https://github.com/WkJ01N/BiliDownload/releases/tag/v0.4.0)
+Android 预览版使用单一 APK，可在应用内下载解析组件。[下载 0.4.1](https://github.com/WkJ01N/BiliDownload/releases/tag/v0.4.1)
 
 ## 运行
 
-Windows 10 22H2 / Windows 11 x64：运行 `artifacts/BiliDownload-0.4.0-windows-x64-setup.exe` 安装，默认仅为当前用户安装，目录受限时申请管理员授权；主程序以普通权限运行。也可解压便携包 `artifacts/BiliDownload-0.4.0-windows-x64-portable.zip` 后运行根目录 `BiliDownload.exe`。根目录仅含启动程序、`app/` 和 `docs/`；运行时、WinUI 资源和 FFmpeg 位于 `app/`，文档及依赖许可位于 `docs/`。粘贴链接、解析、勾选条目后下载；在“已完成”中复制文件，再粘贴到支持文件粘贴的聊天应用。复制文件不保证聊天应用会将它当作内嵌视频发送。
+Windows 10 22H2 / Windows 11 x64：运行 `artifacts/BiliDownload-0.4.1-windows-x64-setup.exe` 安装，默认仅为当前用户安装，目录受限时申请管理员授权；主程序以普通权限运行。也可解压便携包 `artifacts/BiliDownload-0.4.1-windows-x64-portable.zip` 后运行根目录 `BiliDownload.exe`。根目录仅含启动程序、`app/` 和 `docs/`；运行时、WinUI 资源和 FFmpeg 位于 `app/`，文档及依赖许可位于 `docs/`。粘贴链接、解析、勾选条目后下载；在“已完成”中复制文件，再粘贴到支持文件粘贴的聊天应用。复制文件不保证聊天应用会将它当作内嵌视频发送。
 
-Android 10+：安装 `artifacts/android/BiliDownload-0.4.0-preview.apk`。这是使用开发调试密钥签名的预览包，正式公开发行前需要配置专用发布签名。可从 B 站或 YouTube 分享给本应用，也可粘贴链接。视频默认保存至 `Movies/BiliDownload`，音频保存至 `Music/BiliDownload`，设置中可通过系统目录选择器改变位置。在「已完成」中可分享对应的音频或视频。
+Android 10+：安装 `artifacts/android/BiliDownload-0.4.1-preview.apk`。此 APK 沿用上一版的预览签名，可覆盖升级。可从 B 站或 YouTube 分享给本应用，也可粘贴链接。视频默认保存至 `Movies/BiliDownload`，音频保存至 `Music/BiliDownload`，设置中可通过系统目录选择器改变位置。在「已完成」中可分享对应的音频或视频。
 
 Windows 后台监听默认开启，升级首次启动会说明新增行为并提供关闭入口，此后保留用户选择。关闭窗口可选择进入托盘或退出，退出后停止监听。Windows 通知受系统通知设置与勿扰模式影响，主程序须以普通权限运行。Android 剪贴板识别仍默认关闭；系统限制后台读取，快捷方式和快捷设置磁贴会先打开本应用再读取。应用没有开机自启和遥测。
 
@@ -101,7 +107,7 @@ dotnet test tests/BiliDownload.Tests/BiliDownload.Tests.csproj
 ./scripts/build-windows.ps1 -FfmpegDirectory C:/path/to/lgpl-tools
 ```
 
-发布目录 `artifacts/windows-0.4.0/` 包含 .NET 和 Windows App SDK 运行时。自包含部署不使用裁剪，避免破坏 XAML 绑定与 SQLite。安装器、便携 ZIP 使用同一目录结构；升级、卸载保留 `%LOCALAPPDATA%/BiliDownload` 中的设置与历史以及用户视频。`-SkipInstaller` 可仅构建便携包。`scripts/test-windows-ui.ps1` 验证窄窗口操作栏，`scripts/test-installer.ps1` 使用独立 QA 安装标识验证安装和卸载，不替换用户安装。`scripts/test-install-directory.ps1` 检查原生目录助手与发布结构；`pwsh -STA -File scripts/test-installer-ui.ps1` 检查中英文向导；`pwsh -STA -File scripts/test-windows-background.ps1` 使用重命名的隔离 QA 程序和本地接口验证后台流程，需要 Python 3 和 Windows Media Foundation。
+发布目录 `artifacts/windows-0.4.1/` 包含 .NET 和 Windows App SDK 运行时。自包含部署不使用裁剪，避免破坏 XAML 绑定与 SQLite。安装器、便携 ZIP 使用同一目录结构；升级、卸载保留 `%LOCALAPPDATA%/BiliDownload` 中的设置与历史以及用户视频。`-SkipInstaller` 可仅构建便携包。`scripts/test-windows-ui.ps1` 验证窄窗口操作栏，`scripts/test-installer.ps1` 使用独立 QA 安装标识验证安装和卸载，不替换用户安装。`scripts/test-install-directory.ps1` 检查原生目录助手与发布结构；`pwsh -STA -File scripts/test-installer-ui.ps1` 检查中英文向导；`pwsh -STA -File scripts/test-windows-background.ps1` 使用重命名的隔离 QA 程序和本地接口验证后台流程，需要 Python 3 和 Windows Media Foundation。
 
 Android 需要 JDK 21、Android SDK Platform 36、Build Tools 36.0.0 和 NDK 28.2.13676358。设置 `ANDROID_HOME`，或在 `android/local.properties` 配置本机 `sdk.dir`（该文件不提交）。
 

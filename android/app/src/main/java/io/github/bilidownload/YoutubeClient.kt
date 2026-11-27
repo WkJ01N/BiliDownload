@@ -12,6 +12,8 @@ data class YoutubeCatalog(val items: List<MediaItem>, val target: String? = null
 class YoutubeClient(private val context: Context, val session: Session) {
     private val engine = LocalMediaEngine(context.applicationContext)
     val xSession = Session(context,"x-session","BiliDownloadXSession")
+    private data class MetadataKey(val request: String, val generation: Long)
+    private val previews = MetadataCache<MetadataKey, JSONObject>()
 
     suspend fun import(uri: Uri, x: Boolean = false) = withContext(Dispatchers.IO) {
         val bytes = context.contentResolver.openInputStream(uri)?.use { stream ->
@@ -63,8 +65,14 @@ class YoutubeClient(private val context: Context, val session: Session) {
         val info = metadata(JSONObject().put("platform","x").put("op","inspect").put("id",link.id))
         return XContent.catalog(info,link)
     }
-    private suspend fun metadata(request: JSONObject): JSONObject =
-        withTimeoutOrNull(120_000) { execute(request) } ?: throw BiliException("请求超时，请稍后重试。")
+    private suspend fun metadata(request: JSONObject): JSONObject {
+        val account = if (request.optString("platform") == "x") xSession else session
+        val key = MetadataKey(request.toString(), account.generation)
+        return previews.load(key) {
+            withTimeoutOrNull(40_000) { execute(request) }
+                ?: throw BiliException("解析超时，请检查网络后重试。")
+        }
+    }
     private fun item(json: JSONObject, playlist: String? = null, music: Boolean = false): MediaItem {
         val id = json.getString("id"); val title = json.getString("title")
         return MediaItem(if(music) "ytm:$id" else "yt:$id", title, title, "video", 0, "", 0, 0, json.getInt("index"), json.getString("cover"), 1, id, playlist, music)
@@ -74,11 +82,11 @@ class YoutubeClient(private val context: Context, val session: Session) {
         val source = item.x
         val v = source.variants.maxByOrNull { it.quality }
         if(source.audio && v != null) listOf(AudioTrack(requireNotNull(v.formatId),"AAC",0,"",0,source.duration,true,v.estimatedBytes,null,MusicTags(item.title,source.handle),container="mp4")) else emptyList()
-    } else if(item.youtubeId == null) BiliApplication.api.audio(item).map { it.first } else AudioMedia.youtube(inspect(item.youtubeId, item.music, true))
+    } else if(item.youtubeId == null) BiliApplication.api.previewAudio(item) else AudioMedia.youtube(inspect(item.youtubeId, item.music, true))
     private fun choices(info: JSONObject) = info.getJSONArray("variants").objects().map {
         Variant(it.getInt("height"), "${it.getInt("height")}p", it.optLong("bytes").takeIf { bytes -> bytes > 0 }, it.getString("format"))
     }
-    suspend fun variants(item: MediaItem) = item.x?.variants ?: if (item.youtubeId == null) BiliApplication.api.variants(item) else choices(inspect(item.youtubeId))
+    suspend fun variants(item: MediaItem) = item.x?.variants ?: if (item.youtubeId == null) BiliApplication.api.previewVariants(item) else choices(inspect(item.youtubeId, item.music, false))
     suspend fun page(cursor: PlaylistPage): YoutubeCatalog {
         val info = metadata(JSONObject().put("op", "playlist").put("id", cursor.id).put("start", cursor.start).put("music", cursor.music))
         return YoutubeCatalog(info.getJSONArray("items").objects().map { item(it, cursor.id, cursor.music) },
@@ -86,13 +94,17 @@ class YoutubeClient(private val context: Context, val session: Session) {
     }
     suspend fun resolve(link: YoutubeLink, expand: Boolean): YoutubeCatalog {
         if (link.playlist != null && (link.video == null || expand)) {
-            var page = page(PlaylistPage(link.playlist, 1, link.music))
-            val items = page.items.toMutableList()
-            while (page.more != null && (items.isEmpty() || link.video != null && items.none { it.youtubeId == link.video })) {
-                page = page(page.more!!); items.addAll(page.items)
-            }
-            if (link.video != null && items.none { it.youtubeId == link.video }) items += item(inspect(link.video, link.music), music = link.music)
-            return YoutubeCatalog(items, link.video?.let { if(link.music) "ytm:$it" else "yt:$it" }, page.more)
+            var first = page(PlaylistPage(link.playlist, 1, link.music))
+            // Empty pages can occur when all entries were removed or private.
+            while (first.items.isEmpty() && first.more != null) first = page(first.more!!)
+            val target = link.video ?: return first
+            val existing = first.items.firstOrNull { it.youtubeId == target }
+            if (existing != null) return first.copy(target = existing.id, defaults = listOf(existing.id))
+
+            // A shared playlist link already contains the video ID. Looking up
+            // that video directly avoids paging through the entire playlist.
+            val clip = resolve(YoutubeLink(target, null, link.music), expand = false)
+            return clip.copy(items = first.items + clip.items, more = first.more)
         }
         val info = inspect(requireNotNull(link.video), link.music); val item = item(info, music = link.music)
         return YoutubeCatalog(listOf(item), item.id, variants = if(link.music) null else choices(info), audio = if(link.music) AudioMedia.youtube(info) else null)

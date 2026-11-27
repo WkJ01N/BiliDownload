@@ -1,15 +1,8 @@
 package io.github.bilidownload
 
-import android.content.ContentValues
 import android.content.Context
-import android.media.MediaCodec
-import android.media.MediaExtractor
-import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.net.Uri
-import android.os.Environment
-import android.provider.MediaStore
-import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -19,10 +12,10 @@ import org.json.JSONObject
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
-import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 
 class DownloadEngine(private val context: Context) {
+    private val publisher = MediaPublisher(context)
     private val limit = Semaphore(2)
     private val locks = ConcurrentHashMap<String, Mutex>()
     private val running = ConcurrentHashMap<String, Job>()
@@ -105,20 +98,28 @@ class DownloadEngine(private val context: Context) {
                         break
                     } catch (e: IOException) { if(attempt == 2) throw e; update(message = "连接中断，刷新地址后重试"); delay(2000L shl attempt) }
                 }
-                currentCoroutineContext().ensureActive(); update("Merging", .96f, if(selection == null) "合并音视频" else "处理音频")
-                val output = File(directory, "merged" + (selection?.extension ?: ".mp4"))
-                if(selection == null) mux(videos, audio, output)
-                else exportAudio(videos, output, selection, entry.item)
-                currentCoroutineContext().ensureActive()
                 val filename = entry.outputFileName ?: (Links.safeName("${entry.item.title} P${entry.item.index} ${entry.item.partTitle}") + " [${entry.item.id.replace(':', '-')}-${id.take(6)}].mp4")
-                val uri = publish(output, filename, selection?.mime)
+                currentCoroutineContext().ensureActive()
+                val uri = if (selection == null) {
+                    finishVideo(videos, audio, directory, filename) { message -> update("Merging", .96f, message) }
+                } else {
+                    update("Merging", .96f, "处理音频")
+                    val output = File(directory, "merged" + selection.extension)
+                    exportAudio(videos, output, selection, entry.item)
+                    update("Merging", .99f, "保存音频")
+                    publish(output, filename, selection.mime)
+                }
                 // Publication is a short atomic step from the user's perspective. Keep its URI even if cancellation arrives now.
                 BiliApplication.store.update(id) { it.copy(state = "Completed", progress = 1f, message = "下载完成", uri = uri.toString(), finalFileName = runCatching { resolverName(uri) }.getOrNull() ?: filename) }
                 BiliApplication.store.get(id)?.let(notify)
                 directory.deleteRecursively()
                 if (entry.item.youtubeId != null) BiliApplication.youtube.clean(id)
-            } catch (e: CancellationException) { update("Paused", message = "已暂停，可继续"); throw e }
+            } catch (e: CancellationException) {
+                if (BiliApplication.store.get(id)?.state != "Completed") update("Paused", message = "已暂停，可继续")
+                throw e
+            }
             catch (e: Exception) {
+                if (BiliApplication.store.get(id)?.state == "Completed") return@withLock
                 if(!currentCoroutineContext().isActive) { update("Paused", message = "已暂停，可继续"); throw CancellationException("下载已停止", e) }
                 update("Failed", message = if(e is BiliException) e.message.orEmpty() else if(e is IOException) "网络或文件写入失败，请检查网络、空间和目录权限。" else "媒体处理失败，请重试或更换画质。")
                 BiliApplication.store.update(id) { it.copy(failureKind = (e as? BiliException)?.kind?.name) }
@@ -128,20 +129,57 @@ class DownloadEngine(private val context: Context) {
     }
     internal suspend fun exportAudio(videos: List<File>, output: File, selection: AudioOutput, item: MediaItem) {
         var finished = false
-        if(selection.mp3Kbps == 0) {
-            val head = ByteArray(12)
-            videos.first().inputStream().use { it.read(head) }
-            val magic = String(head, Charsets.ISO_8859_1)
-            if(!selection.track.mixed && videos.size == 1 &&
-                (selection.extension == ".flac" && magic.startsWith("fLaC") || selection.extension == ".opus" && magic.startsWith("OggS"))) {
-                videos.first().copyTo(output, overwrite = true); finished = true
-            } else if(selection.extension in listOf(".opus",".m4a")) {
-                try { mux(videos,null,output,selection.extension); finished = true }
-                catch(e: CancellationException) { throw e } catch(_: Exception) { output.delete() }
+        if (selection.mp3Kbps == 0) {
+            val source = videos.singleOrNull()?.takeUnless { selection.track.mixed }
+            val unchanged = source != null && when (selection.extension) {
+                ".flac", ".opus" -> {
+                    val head = ByteArray(4)
+                    source.inputStream().use { it.read(head) }
+                    String(head, Charsets.ISO_8859_1) == if (selection.extension == ".flac") "fLaC" else "OggS"
+                }
+                ".m4a" -> canSaveMp4Directly(source, audioOnly = true)
+                else -> false
+            }
+            if (unchanged) {
+                output.outputStream().use { copyMediaFile(source!!, it) }
+                finished = true
+            } else if (selection.extension == ".opus" || selection.extension == ".m4a") {
+                try {
+                    val format = if (selection.extension == ".opus") MediaMuxer.OutputFormat.MUXER_OUTPUT_OGG
+                        else MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4
+                    muxMedia(videos, null, MediaMuxer(output.path, format), audioOnly = true)
+                    finished = true
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    output.delete()
+                }
             }
         }
         if(!finished) BiliApplication.audio.convert(videos,output,selection)
         AudioTags.write(output,selection.track.tags ?: MusicTags(if(item.partCount > 1) item.partTitle else item.title,cover = item.cover))
+    }
+
+    internal suspend fun finishVideo(videos: List<File>, audio: File?, work: File, filename: String,
+                                     status: (String) -> Unit = {}): Uri {
+        val tree = publisher.selectedTree()
+        val direct = videos.singleOrNull()?.takeIf { audio == null && canSaveMp4Directly(it) }
+        if (direct != null) {
+            status("保存视频")
+            return publisher.publish(direct, filename, "video/mp4", null, null, tree)
+        }
+        status("合并音视频")
+        val staging = File(work, "merged.mp4")
+        val video = videos.singleOrNull()
+        val streamCopied = if (video != null && audio != null) {
+            try {
+                BiliApplication.audio.muxVideo(video, audio, staging)
+                true
+            } catch (_: BiliException) { false }
+        } else false
+        if (!streamCopied) muxMedia(videos, audio, MediaMuxer(staging.path, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4))
+        status("保存视频")
+        return publisher.publish(staging, filename, "video/mp4", null, null, tree)
     }
 
     private class MediaHttpException(val status: Int) : IOException("HTTP $status")
@@ -195,93 +233,11 @@ class DownloadEngine(private val context: Context) {
     }
     private fun File.outputStreamFor(append: Boolean) = java.io.FileOutputStream(this, append)
 
-    private suspend fun mux(videos: List<File>, audio: File?, output: File, audioExtension: String? = null) {
-        val muxer = MediaMuxer(output.path, if(audioExtension == ".opus") MediaMuxer.OutputFormat.MUXER_OUTPUT_OGG else MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-        var started = false
-        try {
-            val tracks = mutableMapOf<String, Int>()
-            fun category(format: MediaFormat): String? = format.getString(MediaFormat.KEY_MIME)?.let { if(audioExtension == null && it.startsWith("video/")) "video" else if(it.startsWith("audio/")) "audio" else null }
-            for (file in listOfNotNull(videos.firstOrNull(), audio)) {
-                val ex = MediaExtractor()
-                try { ex.setDataSource(file.path); for(i in 0 until ex.trackCount) { val fmt = ex.getTrackFormat(i); val type = category(fmt) ?: continue; if(type !in tracks) tracks[type] = muxer.addTrack(fmt) } }
-                finally { ex.release() }
-            }
-            if((if(audioExtension == null) "video" else "audio") !in tracks) throw BiliException("媒体源中没有可导出的视频轨道。")
-            muxer.start(); started = true
-            val offsets = mutableMapOf<String, Long>(); val buffer = ByteBuffer.allocateDirect(16 * 1024 * 1024)
-            for(file in videos + listOfNotNull(audio)) {
-                val ex = MediaExtractor()
-                try {
-                    ex.setDataSource(file.path)
-                    val selected = (0 until ex.trackCount).mapNotNull { i -> category(ex.getTrackFormat(i))?.let { i to it } }.toMap()
-                    val durations = selected.map { (track, type) -> val format = ex.getTrackFormat(track); type to if(format.containsKey(MediaFormat.KEY_DURATION)) format.getLong(MediaFormat.KEY_DURATION) else 0L }.toMap()
-                    val steps = selected.map { (track, type) ->
-                        val format = ex.getTrackFormat(track)
-                        type to if(type == "video") 1_000_000L / (if(format.containsKey(MediaFormat.KEY_FRAME_RATE)) format.getInteger(MediaFormat.KEY_FRAME_RATE).coerceAtLeast(1) else 30)
-                            else 1_024_000_000L / (if(format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) format.getInteger(MediaFormat.KEY_SAMPLE_RATE).coerceAtLeast(1) else 48000)
-                    }.toMap()
-                    selected.keys.forEach(ex::selectTrack)
-                    val first = mutableMapOf<String, Long>(); val ends = mutableMapOf<String, Long>()
-                    while(ex.sampleTrackIndex >= 0) {
-                        currentCoroutineContext().ensureActive()
-                        val type = selected[ex.sampleTrackIndex] ?: break
-                        if(ex.sampleFlags and MediaExtractor.SAMPLE_FLAG_ENCRYPTED != 0) throw BiliException("加密视频轨道无法导出。")
-                        buffer.clear(); val size = ex.readSampleData(buffer, 0); if(size < 0) break
-                        val base = first.getOrPut(type) { ex.sampleTime }
-                        val time = ex.sampleTime - base + offsets.getOrDefault(type, 0)
-                        val flags = if(ex.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
-                        val info = MediaCodec.BufferInfo().apply { set(0, size, time, flags) }
-                        muxer.writeSampleData(tracks.getValue(type), buffer, info)
-                        ends[type] = maxOf(ends.getOrDefault(type, 0), time + steps.getValue(type)); ex.advance()
-                    }
-                    ends.forEach { (type, end) -> offsets[type] = maxOf(end, offsets.getOrDefault(type, 0) + durations.getOrDefault(type, 0)) }
-                } finally { ex.release() }
-            }
-            muxer.stop(); started = false
-        } finally { if(started) runCatching { muxer.stop() }; muxer.release() }
-    }
-    private val publishLock = Any()
-    private fun resolverName(uri: Uri): String? = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { if(it.moveToFirst()) it.getString(0) else null }
-    internal fun publish(file: File, requested: String, audioMime: String? = null, destination: XDestination? = null, x: XContent? = null): Uri = synchronized(publishLock) {
-        val mime = audioMime ?: "video/mp4"
-        val folder = when {
-            mime.startsWith("audio/") -> Environment.DIRECTORY_MUSIC
-            mime.startsWith("video/") -> Environment.DIRECTORY_MOVIES
-            mime.startsWith("image/") -> Environment.DIRECTORY_PICTURES
-            else -> Environment.DIRECTORY_DOWNLOADS
-        }
-        val postFolder = if(destination?.grouped == true && x != null) Links.safeName(x.handle+"-"+x.postId) else null
-        val collection = when {
-            postFolder != null || folder == Environment.DIRECTORY_DOWNLOADS -> MediaStore.Downloads.EXTERNAL_CONTENT_URI
-            folder == Environment.DIRECTORY_MUSIC -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-            folder == Environment.DIRECTORY_PICTURES -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-            else -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-        }
-        val directory = if(postFolder == null) "$folder/BiliDownload" else Environment.DIRECTORY_DOWNLOADS+"/BiliDownload/"+postFolder
-        var name = requested
-        val resolver = context.contentResolver
-        val tree = if(destination != null) destination.tree else context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("directory", null)
-        val parent = tree?.let {
-            val root = DocumentFile.fromTreeUri(context, Uri.parse(it)) ?: throw IOException("目录不可用")
-            if(destination == null) root else {
-                val child = postFolder ?: folder
-                (root.findFile(child) ?: root.createDirectory(child))?.takeIf { it.isDirectory } ?: throw IOException("无法创建子目录")
-            }
-        }
-        val occupied = mutableSetOf<String>()
-        if(parent != null) parent.listFiles().mapNotNullTo(occupied) { it.name }
-        else resolver.query(collection, arrayOf(MediaStore.Video.Media.DISPLAY_NAME), "${MediaStore.Video.Media.RELATIVE_PATH} = ?", arrayOf("$directory/"), null)?.use { c -> while(c.moveToNext()) occupied += c.getString(0) }
-        var suffix = 0
-        while(name in occupied) { suffix++; name = FileNaming.candidate(requested, suffix) }
-        val uri = if(parent != null) parent.createFile(mime, name)?.uri ?: throw IOException("目标目录不可写")
-        else resolver.insert(collection, ContentValues().apply {
-            put(MediaStore.Video.Media.DISPLAY_NAME, name); put(MediaStore.Video.Media.MIME_TYPE, mime)
-            put(MediaStore.Video.Media.RELATIVE_PATH, directory); put(MediaStore.Video.Media.IS_PENDING, 1)
-        }) ?: throw IOException("无法创建视频文件")
-        try {
-            resolver.openOutputStream(uri, "w")?.use { output -> file.inputStream().use { it.copyTo(output) } } ?: throw IOException("无法写入目录")
-            if(tree == null) resolver.update(uri, ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }, null, null)
-            uri
-        } catch (e: Exception) { if(tree == null) resolver.delete(uri, null, null) else DocumentFile.fromSingleUri(context, uri)?.delete(); throw e }
-    }
+    private fun resolverName(uri: Uri): String? = context.contentResolver
+        .query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+        ?.use { if (it.moveToFirst()) it.getString(0) else null }
+
+    internal suspend fun publish(file: File, requested: String, audioMime: String? = null,
+                                 destination: XDestination? = null, x: XContent? = null): Uri =
+        publisher.publish(file, requested, audioMime ?: "video/mp4", destination, x)
 }

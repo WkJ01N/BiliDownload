@@ -1,7 +1,9 @@
 param([string]$FfmpegDirectory, [switch]$SkipInstaller)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$version = '0.4.0'
+$projectFile = Join-Path $projectRoot 'src/BiliDownload.Windows/BiliDownload.Windows.csproj'
+$version = ([xml](Get-Content -LiteralPath $projectFile -Raw)).Project.PropertyGroup.Version
+if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid Windows project version.' }
 $env:DOTNET_CLI_HOME = Join-Path $projectRoot '.build/dotnet'
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 $env:MSBuildEnableWorkloadResolver = 'false'
@@ -14,7 +16,7 @@ if (Test-Path -LiteralPath $outputDirectory) { Remove-Item -LiteralPath $outputD
 $payload = Join-Path $outputDirectory 'app'
 $docs = Join-Path $outputDirectory 'docs'
 New-Item -ItemType Directory -Force $payload,$docs | Out-Null
-dotnet publish (Join-Path $projectRoot 'src/BiliDownload.Windows/BiliDownload.Windows.csproj') -c Release -r win-x64 -p:Platform=x64 -o $payload
+dotnet publish $projectFile -c Release -r win-x64 -p:Platform=x64 -o $payload
 if ($LASTEXITCODE -ne 0) { throw 'Windows publish failed.' }
 if (-not (Test-Path -LiteralPath (Join-Path $payload 'BiliDownload.pri'))) { throw 'WinUI resource index is missing from publish output.' }
 Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE'),(Join-Path $projectRoot 'THIRD_PARTY_NOTICES.md'),(Join-Path $projectRoot 'README.md'),(Join-Path $projectRoot 'VALIDATION.md') -Destination $docs

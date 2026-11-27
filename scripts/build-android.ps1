@@ -24,7 +24,9 @@ Push-Location (Join-Path $projectRoot 'android')
 try {
     & .\gradlew.bat assembleDebug testDebugUnitTest lintDebug --console plain
     if ($LASTEXITCODE -ne 0) { throw 'Android build or checks failed.' }
+    $apkDirectory = 'app/build/outputs/apk/debug'
+    $apk = (Get-Content -LiteralPath (Join-Path $apkDirectory 'output-metadata.json') -Raw | ConvertFrom-Json).elements[0]
     $outputDirectory = Join-Path $projectRoot 'artifacts/android'
     New-Item -ItemType Directory -Force $outputDirectory | Out-Null
-    Copy-Item -LiteralPath app/build/outputs/apk/debug/app-debug.apk -Destination (Join-Path $outputDirectory 'BiliDownload-0.4.0-preview.apk') -Force
+    Copy-Item -LiteralPath (Join-Path $apkDirectory $apk.outputFile) -Destination (Join-Path $outputDirectory "BiliDownload-$($apk.versionName)-preview.apk") -Force
 } finally { Pop-Location }

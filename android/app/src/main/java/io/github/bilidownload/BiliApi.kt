@@ -20,6 +20,11 @@ import java.net.URLEncoder
 import java.security.MessageDigest
 
 class BiliApi(private val session: Session) {
+    private data class PreviewKey(val item: String, val generation: Long)
+    private data class Preview(val video: Result<List<Variant>>, val audio: Result<List<AudioTrack>>)
+    private val previews = MetadataCache<PreviewKey, Preview>()
+    private val catalogs = MetadataCache<PreviewKey, JSONObject>()
+
     companion object {
         const val UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36"
         private val order = intArrayOf(46,47,18,2,53,8,23,32,15,50,10,31,58,3,45,35,27,43,5,49,33,9,42,19,29,28,14,39,12,38,41,13,37,48,7,16,24,55,40,61,26,17,0,1,60,51,30,4,22,25,54,21,56,59,6,63,57,62,11,36,20,34,44,52)
@@ -103,7 +108,9 @@ class BiliApi(private val session: Session) {
             val video = Regex("/video/(BV[a-zA-Z0-9]{10}|av[0-9]+)").find(path)
             if (video != null) {
                 val id = video.groupValues[1]
-                val data = api("https://api.bilibili.com/x/web-interface/view?" + if (id.startsWith("av")) "aid=${id.drop(2)}" else "bvid=$id")
+                val data = catalogs.load(PreviewKey(id, session.generation)) {
+                    api("https://api.bilibili.com/x/web-interface/view?" + if (id.startsWith("av")) "aid=${id.drop(2)}" else "bvid=$id")
+                }
                 data.getJSONArray("pages").objects().forEachIndexed { index, p -> items += MediaItem("video:${p.getLong("cid")}", data.getString("title"), p.optString("part"), "video", data.getLong("aid"), data.getString("bvid"), p.getLong("cid"), 0, index + 1, data.optString("pic"), data.getJSONArray("pages").length()) }
             } else if (path.contains("/bangumi/") || path.contains("/cheese/")) {
                 val match = Regex("/(ep|ss|md)([0-9]+)").find(path) ?: throw BiliException("请提供分集或系列播放链接。")
@@ -151,13 +158,20 @@ class BiliApi(private val session: Session) {
         if (data.optJSONArray("durl")?.length() ?: 0 > 0) return listOf(Variant(data.optInt("quality"), label(data.optInt("quality")), data.getJSONArray("durl").objects().map { it.optLong("size") }.let { sizes -> if(sizes.all { it > 0 }) sizes.sum() else null }))
         throw BiliException("没有可下载的兼容视频源，请检查账号权限。")
     }
-    suspend fun audio(item: MediaItem) = AudioMedia.bili(info(item, 127), item.cid)
+    private suspend fun preview(item: MediaItem): Preview =
+        previews.load(PreviewKey(item.id, session.generation)) {
+            val data = info(item, 127)
+            Preview(runCatching { variants(data) }, runCatching { AudioMedia.bili(data, item.cid).map { it.first } })
+        }
+
+    suspend fun previewAudio(item: MediaItem): List<AudioTrack> = preview(item).audio.getOrThrow()
+    suspend fun previewVariants(item: MediaItem): List<Variant> = preview(item).video.getOrThrow()
+
     suspend fun audioPlan(item: MediaItem, output: AudioOutput): DownloadPlan {
-        val (track, parts) = audio(item).firstOrNull { it.first.id == output.track.id && it.first.mixed == output.track.mixed }
+        val (track, parts) = AudioMedia.bili(info(item, 127), item.cid).firstOrNull { it.first.id == output.track.id && it.first.mixed == output.track.mixed }
             ?: throw BiliException("所选音轨已不可用，请重新解析并选择音质。", BiliErrorKind.TrackChanged)
         return DownloadPlan(Variant(0, track.codec), parts, null)
     }
-    suspend fun variants(item: MediaItem) = variants(info(item, 127))
     suspend fun plan(item: MediaItem, quality: Int): DownloadPlan {
         val data = info(item, quality)
         val selected = variants(data).filter { it.quality <= quality }.maxByOrNull { it.quality } ?: throw BiliException("没有符合画质上限的 H.264 视频。")

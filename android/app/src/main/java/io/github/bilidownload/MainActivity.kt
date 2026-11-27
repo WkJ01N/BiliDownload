@@ -31,7 +31,10 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import java.util.UUID
 
 class MainActivity : ComponentActivity() {
@@ -69,6 +72,10 @@ class MainActivity : ComponentActivity() {
             var gifIds by rememberSaveable(stateSaver = listSaver<Set<String>, String>(save = { it.toList() }, restore = { it.toSet() })) { mutableStateOf(emptySet<String>()) }
             val components = BiliApplication.components
             val componentState by components.state.collectAsStateWithLifecycle()
+            var legacyComponents by remember { mutableStateOf(emptyList<LegacyComponent>()) }
+            LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+                legacyComponents = LegacyComponent.entries.filter { it.installed(this@MainActivity) }
+            }
             var pendingComponent by rememberSaveable { mutableStateOf<Bundle?>(null) }
             fun requestComponent(operation: String, taskId: String? = null, preferAudio: Boolean = false) {
                 pendingComponent = Bundle().apply {
@@ -85,15 +92,14 @@ class MainActivity : ComponentActivity() {
             var message by rememberSaveable { mutableStateOf("") }
             var loading by remember { mutableStateOf(false) }
             val mediaSaver = Saver<List<MediaItem>, String>(save = { Gson().toJson(it) }, restore = { Gson().fromJson(it, object : TypeToken<List<MediaItem>>() {}.type) })
-            val variantsSaver = Saver<List<Variant>, String>(save = { Gson().toJson(it) }, restore = { Gson().fromJson(it, object : TypeToken<List<Variant>>() {}.type) })
             var media by rememberSaveable(stateSaver = mediaSaver) { mutableStateOf(emptyList<MediaItem>()) }
-            var variants by rememberSaveable(stateSaver = variantsSaver) { mutableStateOf(emptyList<Variant>()) }
             var selected by rememberSaveable(stateSaver = listSaver<Set<String>, String>(save = { it.toList() }, restore = { it.toSet() })) { mutableStateOf(emptySet<String>()) }
             var mode by rememberSaveable { mutableIntStateOf(0) }
             var mp3 by rememberSaveable { mutableStateOf(false) }
             var bitrate by rememberSaveable { mutableIntStateOf(320) }
             var trackIds by rememberSaveable { mutableStateOf(android.os.Bundle()) }
             val audioCache = remember { mutableStateMapOf<String,List<AudioTrack>>() }
+            val sizeCache = remember { mutableStateMapOf<String, List<Variant>>() }
             fun audioMode(item: MediaItem) = (item.x == null || item.x.audio && item.x.kind == "video") && (mode == 2 || mode == 0 && item.music)
             fun videoMode(item: MediaItem) = (item.x == null || item.x.video) && !audioMode(item)
             fun output(item: MediaItem): AudioOutput? {
@@ -103,7 +109,14 @@ class MainActivity : ComponentActivity() {
                 return AudioOutput(actual, if(mp3) bitrate else 0)
             }
             fun ext(item: MediaItem) = if(audioMode(item)) output(item)?.extension ?: if(mp3) ".mp3" else ".m4a" else if(item.x?.kind=="gif" && item.id in gifIds) ".gif" else item.x?.extension ?: ".mp4"
-            var quality by rememberSaveable { mutableIntStateOf(80) }
+            var preferredCap by rememberSaveable { mutableStateOf<Int?>(null) }
+            val reference = media.firstOrNull { it.id in selected && videoMode(it) }
+            val variants = reference?.let { sizeCache[it.id] }.orEmpty()
+            val quality = preferredQuality(variants, preferredCap)
+            val sizeLimit = variants.firstOrNull { it.quality == quality }
+            val sizes = if (sizeLimit == null) emptyMap() else media.asSequence()
+                .filter { it.id in selected && videoMode(it) }
+                .associate { item -> item.id to sizeCache[item.id]?.let { atMost(it, sizeLimit, item) } }
             var detect by remember { mutableStateOf(prefs.getBoolean("detect", false)) }
             var directory by remember { mutableStateOf(prefs.getString("directory", null)) }
             var namingTemplate by rememberSaveable { mutableStateOf(prefs.getString("filenameTemplate", FileNaming.DEFAULT) ?: FileNaming.DEFAULT) }
@@ -111,8 +124,6 @@ class MainActivity : ComponentActivity() {
             var namingDraft by rememberSaveable { mutableStateOf(namingTemplate) }
             var customNamesJson by rememberSaveable { mutableStateOf("{}") }
             fun customNames(): Map<String, String> = Gson().fromJson(customNamesJson, object : TypeToken<Map<String, String>>() {}.type)
-            val sizeCache = remember { mutableMapOf<String, List<Variant>>() }
-            var sizes by remember { mutableStateOf(emptyMap<String, Variant?>()) }
             var sizeLoading by remember { mutableStateOf(false) }
             var detailRetry by remember { mutableStateOf(false) }
             var detailAttempt by remember { mutableIntStateOf(0) }
@@ -151,7 +162,12 @@ class MainActivity : ComponentActivity() {
             }
             val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
             val login = rememberLauncherForActivityResult(LoginActivity.Contract()) { result ->
-                if(result.outcome == LoginOutcome.Success) failureKind = null
+                if(result.outcome == LoginOutcome.Success) {
+                    failureKind = null
+                    sizeCache.clear()
+                    audioCache.clear()
+                    detailAttempt++
+                }
                 AuthRecovery.loginMessage(result, pendingTask != null)?.let { message = it }
                 pendingTask = null
             }
@@ -160,40 +176,57 @@ class MainActivity : ComponentActivity() {
                 if(loading) return
                 val requestInput = input
                 val links = Links.supported(requestInput)
-                if(!components.state.value.ready && links.any { YoutubeLink.parse(it) != null || XLink.parse(it) != null || XLink.short(it) }) {
-                    requestComponent("parse",preferAudio=preferAudio)
-                    return
-                }
-                val oldSelection = if(parsedInput == requestInput) selected else null
-                val previousItems = media.filter { it.id in oldSelection.orEmpty() && it.playlistId != null }
-                val oldQuality = if(parsedInput == requestInput) quality else null
+                val sameInput = parsedInput == requestInput
+                val oldSelection = selected.takeIf { sameInput }
+                val previousItems = media.filter { sameInput && it.playlistId != null }
+                val previousPages = pages.takeIf { sameInput }.orEmpty()
+                loading = true
                 scope.launch {
-                    sizeCache.clear(); audioCache.clear(); pages = emptyList(); loading = true; message = ""; failureKind = null; retryParse = false
-                    if(parsedInput != requestInput) { gifIds = emptySet(); customNamesJson = "{}"; sizeCache.clear(); sizes = emptyMap(); media = emptyList(); variants = emptyList(); selected = emptySet() }
                     try {
-                        val catalogs = links.map { url ->
+                        val needsComponent = links.any { YoutubeLink.parse(it) != null || XLink.parse(it) != null || XLink.short(it) }
+                        if (needsComponent && !components.state.first { !it.checking }.ready) {
+                            if (input == requestInput) requestComponent("parse", preferAudio = preferAudio)
+                            return@launch
+                        }
+                        message = ""; failureKind = null; retryParse = false
+                        if (!sameInput) {
+                            pages = emptyList(); media = emptyList(); selected = emptySet()
+                            gifIds = emptySet(); customNamesJson = "{}"; preferredCap = null
+                            sizeCache.clear(); audioCache.clear()
+                        }
+                        val catalogs = links.mapMetadata { url ->
                             if(XLink.short(url) || XLink.parse(url) != null) youtube.xPost(XLink.parse(url) ?: XLink.expand(url)) else YoutubeLink.parse(url)?.let { link ->
-                                var catalog = youtube.resolve(link, expand)
-                                while (catalog.more != null && previousItems.any { old -> old.playlistId == catalog.more?.id && catalog.items.none { it.id == old.id } }) {
-                                    val more = youtube.page(catalog.more!!)
-                                    catalog = catalog.copy(items = (catalog.items + more.items).distinctBy { it.id }, more = more.more)
+                                val catalog = youtube.resolve(link, expand)
+                                val listId = link.playlist
+                                if (listId == null || link.video != null && !expand) catalog
+                                else {
+                                    val retained = previousItems.filter { it.playlistId == listId && it.music == link.music }
+                                    val indexedIds = retained.mapTo(mutableSetOf()) { it.id }
+                                    catalog.copy(
+                                        items = (catalog.items.filterNot { it.playlistId == null && it.id in indexedIds } + retained).distinctBy { it.id },
+                                        more = previousPages.firstOrNull { it.id == listId && it.music == link.music } ?: catalog.more
+                                    )
                                 }
-                                catalog
                             } ?: run { var target: String? = null; val items = BiliApplication.api.resolve(url) { target = it }; YoutubeCatalog(items,target) }
                         }
                         if (input != requestInput) return@launch
                         val resolved = catalogs.flatMap { it.items }.distinctBy { it.id }.sortedBy { it.music }
                         if (resolved.isEmpty()) throw BiliException("没有找到可下载的内容。")
+                        sizeCache.clear()
+                        audioCache.clear()
                         catalogs.forEach { catalog -> catalog.target?.let { id -> catalog.variants?.let { sizeCache[id] = it }; catalog.audio?.let { audioCache[id] = it } } }
-                        if(parsedInput != requestInput) { mode = if(resolved.all { it.music }) 2 else if(resolved.none { it.music }) 1 else 0; mp3 = false; bitrate = 320; trackIds = android.os.Bundle() }
+                        if(!sameInput) { mode = if(resolved.all { it.music }) 2 else if(resolved.none { it.music }) 1 else 0; mp3 = false; bitrate = 320; trackIds = android.os.Bundle() }
                         if(preferAudio) mode = 2
                         pages = catalogs.mapNotNull { it.more }; media = resolved; parsedInput = requestInput
                         selected = oldSelection?.intersect(resolved.filter { it.x?.available != false }.map { it.id }.toSet()) ?: catalogs.flatMap { it.defaults }.toSet()
-                        val reference = resolved.firstOrNull { it.id in selected && videoMode(it) }
-                        variants = if (reference == null) emptyList() else sizeCache[reference.id] ?: youtube.variants(reference).also { sizeCache[reference.id] = it }
-                        quality = preferredQuality(variants, oldQuality)
                     } catch(e: CancellationException) { throw e }
-                    catch(e: Exception) { failureKind = (e as? BiliException)?.kind?.name; retryParse = true; message = if(e is BiliException) e.message.orEmpty() else "解析失败，请检查网络后重试。" }
+                    catch(e: Exception) {
+                        if (input != requestInput) return@launch
+                        failureKind = (e as? BiliException)?.kind?.name
+                        if (!components.state.value.ready && failureKind in listOf("YoutubeComponent", "XComponent"))
+                            requestComponent("parse", preferAudio = preferAudio)
+                        else { retryParse = true; message = if(e is BiliException) e.message.orEmpty() else "解析失败，请检查网络后重试。" }
+                    }
                     finally { loading = false }
                 }
             }
@@ -210,7 +243,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            if (pendingComponent != null && !componentState.ready) {
+            if (pendingComponent != null && !componentState.ready && !componentState.checking) {
                 MediaComponentDialog(componentState, components.downloadBytes, onInstall = { components.startInstall() }, onDismiss = {
                     pendingComponent = null
                     if(components.state.value.downloading) components.cancelInstall()
@@ -220,36 +253,41 @@ class MainActivity : ComponentActivity() {
                 if(uri != null) { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION); directory = uri.toString(); prefs.edit().putString("directory", directory).apply() }
             }
             LaunchedEffect(Unit) { if(Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS) }
-            LaunchedEffect(media, selected, quality, loading, detailAttempt, mode, trackIds) {
-                if(loading || retryParse) return@LaunchedEffect
-                sizeLoading = true; detailRetry = false
-                val result = mutableMapOf<String, Variant?>()
+            LaunchedEffect(media, selected, loading, detailAttempt, mode, parsedInput, input) {
+                if (loading || retryParse || parsedInput != input) return@LaunchedEffect
+                val requested = media.filter { it.id in selected }.mapNotNull { item ->
+                    when {
+                        audioMode(item) && item.id !in audioCache -> item to true
+                        videoMode(item) && item.id !in sizeCache -> item to false
+                        else -> null
+                    }
+                }
+                detailRetry = false
+                if (requested.isEmpty()) return@LaunchedEffect
+                sizeLoading = true
                 try {
-                    val chosen = media.filter { it.id in selected }
-                    for(item in chosen.filter(::audioMode)) {
-                        if(item.id !in audioCache) audioCache[item.id] = youtube.audio(item)
-                        if(audioCache[item.id].isNullOrEmpty()) throw BiliException("当前没有可用音轨。")
-                    }
-                    val first = chosen.firstOrNull(::videoMode)
-                    if (first == null) { variants = emptyList(); sizes = emptyMap(); return@LaunchedEffect }
-                    val firstVariants = sizeCache[first.id] ?: youtube.variants(first).also { sizeCache[first.id] = it }
-                    variants = firstVariants
-                    val limit = firstVariants.firstOrNull { it.quality == quality } ?: run {
-                        quality = preferredQuality(firstVariants, null); firstVariants.firstOrNull { it.quality == quality }
-                    }
-                    for(item in chosen.filter(::videoMode)) {
-                        val available = try { sizeCache[item.id] ?: youtube.variants(item).also { sizeCache[item.id] = it } }
-                        catch(e: CancellationException) { throw e } catch(e: Exception) {
-                            detailRetry = true; failureKind = (e as? BiliException)?.kind?.name
-                            message = item.title + "：" + (if(e is BiliException) e.message.orEmpty() else "无法获取画质。")
-                            emptyList()
+                    val failures = requested.mapMetadata { (item, audio) ->
+                        try {
+                            if (audio) {
+                                val tracks = youtube.audio(item)
+                                if (tracks.isEmpty()) throw BiliException("当前没有可用音轨。")
+                                audioCache[item.id] = tracks
+                            } else {
+                                sizeCache[item.id] = youtube.variants(item)
+                            }
+                            null
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            item to e
                         }
-                        result[item.id] = limit?.let { atMost(available, it, item) }
                     }
-                    sizes = result
-                } catch (e: CancellationException) { throw e }
-                catch (e: Exception) { sizes = emptyMap(); variants = emptyList(); failureKind = (e as? BiliException)?.kind?.name; detailRetry = true; message = if (e is BiliException) e.message.orEmpty() else "无法获取画质，请重试。" }
-                finally { sizeLoading = false }
+                    failures.filterNotNull().firstOrNull()?.let { (item, e) ->
+                        detailRetry = true
+                        failureKind = (e as? BiliException)?.kind?.name
+                        message = item.title + "：" + (if (e is BiliException) e.message.orEmpty() else "无法获取格式，请重试。")
+                    }
+                } finally { sizeLoading = false }
             }
             removeId?.let { id -> AlertDialog(onDismissRequest = { removeId = null }, title = { Text("移除任务记录？") }, text = { Text("进行中的下载会停止，并清理临时缓存。已下载的文件会保留。") }, confirmButton = { TextButton(onClick = {
                 removeId = null
@@ -310,7 +348,7 @@ class MainActivity : ComponentActivity() {
                                 if(media.any { it.x == null || it.x.audio }) item { ChoiceMenu("下载内容",listOf("按链接类型","视频","音频"),mode) { mode = it } }
                                 if(media.any(::audioMode)) item { ChoiceMenu("音频格式",listOf("保留原音","MP3"),if(mp3) 1 else 0) { mp3 = it == 1 } }
                                 if(mp3 && media.any(::audioMode)) item { val rates = listOf(320,192,128); ChoiceMenu("MP3 码率",rates.map { "$it kb/s" },rates.indexOf(bitrate)) { bitrate = rates[it] } }
-                                if (variants.isNotEmpty() && media.any(::videoMode)) item { Box { OutlinedButton(border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline), onClick = { qualityOpen = true }) { Text("画质上限：${variants.firstOrNull { it.quality == quality }?.label.orEmpty()}") }; DropdownMenu(expanded = qualityOpen, onDismissRequest = { qualityOpen = false }) { variants.forEach { v -> DropdownMenuItem(text = { Text(v.label + "  " + MediaSize.format(v.estimatedBytes)) }, onClick = { quality = v.quality; qualityOpen = false }) } } } }
+                                if (variants.isNotEmpty() && media.any(::videoMode)) item { Box { OutlinedButton(border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline), onClick = { qualityOpen = true }) { Text("画质上限：${sizeLimit?.label.orEmpty()}") }; DropdownMenu(expanded = qualityOpen, onDismissRequest = { qualityOpen = false }) { variants.forEach { v -> DropdownMenuItem(text = { Text(v.label + "  " + MediaSize.format(v.estimatedBytes)) }, onClick = { preferredCap = v.quality; qualityOpen = false }) } } } }
                                 val chosen = media.filter { it.id in selected }
                                 val totals = chosen.map { if(audioMode(it)) output(it)?.estimatedBytes else sizes[it.id]?.estimatedBytes ?: it.x?.bytes }
                                 item { Text(if(sizeLoading) "正在估算大小…" else "选中 ${selected.size} 项：" + MediaSize.format(totals.filterNotNull().takeIf { it.isNotEmpty() }?.sum()) + if(totals.any { it == null }) "，部分大小未知" else "") }
@@ -343,7 +381,8 @@ class MainActivity : ComponentActivity() {
                                         try {
                                             val page = youtube.page(next)
                                             if (parsedInput == original && input == original) {
-                                                media = (media + page.items).distinctBy { it.id }
+                                                val pageIds = page.items.mapTo(mutableSetOf()) { it.id }
+                                                media = (media.filterNot { it.playlistId == null && it.id in pageIds } + page.items).distinctBy { it.id }
                                                 pages = pages.drop(1) + listOfNotNull(page.more)
                                             }
                                         } catch (e: CancellationException) { throw e }
@@ -426,8 +465,21 @@ class MainActivity : ComponentActivity() {
                         3 -> {
                             item { Text("设置", style = MaterialTheme.typography.headlineSmall) }
                             item { Text("B 站账号", style = MaterialTheme.typography.titleMedium); Text(account.label) }
-                            item { if(!account.loggedIn) FilledTonalButton(onClick = { launchLogin() }) { Text("登录 B 站") } else OutlinedButton(border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline), onClick = { BiliApplication.session.clear(); android.webkit.CookieManager.getInstance().removeAllCookies(null); message = "已退出登录" }) { Text("退出登录") } }
+                            item { if(!account.loggedIn) FilledTonalButton(onClick = { launchLogin() }) { Text("登录 B 站") } else OutlinedButton(border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline), onClick = {
+                                BiliApplication.session.clear()
+                                android.webkit.CookieManager.getInstance().removeAllCookies(null)
+                                sizeCache.clear()
+                                audioCache.clear()
+                                detailAttempt++
+                                message = "已退出登录"
+                            }) { Text("退出登录") } }
                             item { MediaComponentSetting(componentState) { requestComponent("settings") } }
+                            items(legacyComponents, key = { it.id }) { legacy ->
+                                TextButton(onClick = {
+                                    if (legacy.installed(this@MainActivity)) runCatching { startActivity(legacy.uninstallIntent()) }
+                                        .onFailure { message = "无法打开系统卸载确认。" }
+                                }) { Text(legacy.removalLabel) }
+                            }
                             item { Text("YouTube", style = MaterialTheme.typography.titleMedium)
                                 Row { TextButton(onClick = { manageSession("YoutubeSession") }) { Text(if (ytAccount.loggedIn) "替换 cookies.txt" else "导入 cookies.txt") }
                                     if (ytAccount.loggedIn) TextButton(onClick = { youtube.session.clear(); sizeCache.clear(); audioCache.clear(); detailAttempt++; message = "YouTube 会话已移除" }) { Text("移除会话") } }
@@ -457,7 +509,7 @@ class MainActivity : ComponentActivity() {
                             item { Text("保存位置：${directory ?: "视频 Movies/BiliDownload，音频 Music/BiliDownload"}") }
                             item { Row { OutlinedButton(border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline), onClick = { picker.launch(null) }) { Text("选择目录") }; TextButton(onClick = { directory = null; prefs.edit().remove("directory").apply() }) { Text("恢复默认") } } }
                             item { Row { listOf("Default" to "系统", "Light" to "浅色", "Dark" to "深色").forEach { (value,label) -> TextButton(onClick = { theme = value; prefs.edit().putString("theme", value).apply() }) { Text(label) } } } }
-                            item { Text("BiliDownload  Android 0.4.0") }
+                            item { Text("BiliDownload  Android ${BuildConfig.VERSION_NAME}") }
                             item { TextButton(onClick = { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/WkJ01N/BiliDownload"))) }.onFailure { message = "无法打开浏览器，请访问 github.com/WkJ01N/BiliDownload。" } }) { Text("GitHub 仓库") } }
                         }
                     }
