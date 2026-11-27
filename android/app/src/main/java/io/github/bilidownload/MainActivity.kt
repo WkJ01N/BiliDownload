@@ -31,18 +31,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.gson.reflect.TypeToken
-import io.github.bilidownload.ui.components.SaltAlertBanner
+import io.github.bilidownload.ui.components.SaltAnimatedAlertBanner
 import io.github.bilidownload.ui.components.SaltBatchActionBar
 import io.github.bilidownload.ui.components.SaltCheckbox
 import io.github.bilidownload.ui.components.SaltFloatingNavBar
+import io.github.bilidownload.ui.components.SaltTextButton
 import io.github.bilidownload.ui.components.SaltTextField
 import io.github.bilidownload.ui.screens.HomeScreen
 import io.github.bilidownload.ui.screens.QueueScreen
@@ -328,9 +333,16 @@ class MainActivity : ComponentActivity() {
                         LoginOutcome.Failed -> { message = result.message ?: "X 登录失败，请重试。"; messageIsError = true }
                         LoginOutcome.Canceled -> Unit
                     }
-                    LoginPlatform.Bilibili -> AuthRecovery.loginMessage(result, pendingTask != null)?.let {
-                        message = it
-                        messageIsError = result.outcome == LoginOutcome.Failed
+                    LoginPlatform.Bilibili -> {
+                        if (currentTab == 3 && result.outcome == LoginOutcome.Success) {
+                            message = "B 站账号登录成功"
+                            messageIsError = false
+                        } else {
+                            AuthRecovery.loginMessage(result, pendingTask != null)?.let {
+                                message = it
+                                messageIsError = result.outcome == LoginOutcome.Failed
+                            }
+                        }
                     }
                 }
                 pendingTask = null
@@ -547,7 +559,7 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     confirmButton = {
-                        TextButton(onClick = {
+                        SaltTextButton(onClick = {
                             val alsoDeleteFiles = deleteLocalFiles && completedTargets.isNotEmpty()
                             removeIds = emptySet()
                             scope.launch {
@@ -576,7 +588,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }) { Text("移除") }
                     },
-                    dismissButton = { TextButton(onClick = { removeIds = emptySet() }) { Text("取消") } },
+                    dismissButton = { SaltTextButton(onClick = { removeIds = emptySet() }) { Text("取消") } },
                 )
             }
 
@@ -608,11 +620,11 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     },
-                    confirmButton = { TextButton(onClick = { finish(renameText) }) { Text("保存") } },
+                    confirmButton = { SaltTextButton(onClick = { finish(renameText) }) { Text("保存") } },
                     dismissButton = {
                         Row {
-                            TextButton(onClick = { finish(null) }) { Text("恢复默认") }
-                            TextButton(onClick = { renameId = null }) { Text("取消") }
+                            SaltTextButton(onClick = { finish(null) }) { Text("恢复默认") }
+                            SaltTextButton(onClick = { renameId = null }) { Text("取消") }
                         }
                     },
                 )
@@ -622,25 +634,61 @@ class MainActivity : ComponentActivity() {
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background,
             ) {
+                val canvasBackground = MaterialTheme.colorScheme.background
+                val contentBackdropLayer = rememberGraphicsLayer()
+                var contentCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+                val observeBackdrop: () -> Unit = {
+                    val activeListState = listStates[currentTab]
+                    activeListState.firstVisibleItemIndex
+                    activeListState.firstVisibleItemScrollOffset
+                    pageTransition.value
+                    CoverBackdropSignal.version
+                    media.size
+                    entries.size
+                    settingsSubPage
+                }
                 Box(modifier = Modifier.fillMaxSize()) {
-                    Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
-                        if (message.isNotBlank()) {
-                            Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
-                                SaltAlertBanner(
-                                    message = message,
-                                    isError = messageIsError,
-                                    onDismiss = { message = ""; messageIsError = false },
-                                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .onGloballyPositioned { contentCoords = it }
+                            .drawWithContent {
+                                observeBackdrop()
+                                contentBackdropLayer.record {
+                                    drawRect(canvasBackground)
+                                    this@drawWithContent.drawContent()
+                                }
+                                drawLayer(contentBackdropLayer)
+                            }
+                            .statusBarsPadding(),
+                    ) {
+                        val showBiliLoginAction = AuthRecovery.needsLogin(failureKind, BiliApplication.session.state)
+                        val showDetailRetryAction = currentTab == 0 && detailRetry && !retryParse
+                        val showReparseAction = currentTab == 0 && retryParse
+                        val hasBannerActions = failureKind == "XSession" ||
+                            failureKind == "YoutubeSession" ||
+                            showBiliLoginAction ||
+                            showDetailRetryAction ||
+                            showReparseAction
+                        SaltAnimatedAlertBanner(
+                            visible = message.isNotBlank(),
+                            message = message,
+                            isError = messageIsError,
+                            onDismiss = { message = ""; messageIsError = false },
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                            autoDismissMs = if (!messageIsError && !hasBannerActions) 3500L else null,
+                            actions = if (hasBannerActions) {
+                                {
                                     if (failureKind == "XSession") {
-                                        TextButton(onClick = { launchLogin(LoginPlatform.X) }) { Text("登录 X") }
+                                        SaltTextButton(onClick = { launchLogin(LoginPlatform.X) }) { Text("登录 X") }
                                     } else if (failureKind == "YoutubeSession") {
-                                        TextButton(onClick = { launchLogin(LoginPlatform.YouTube) }) { Text("登录 YouTube") }
+                                        SaltTextButton(onClick = { launchLogin(LoginPlatform.YouTube) }) { Text("登录 YouTube") }
                                     }
-                                    if (AuthRecovery.needsLogin(failureKind, BiliApplication.session.state)) {
-                                        TextButton(onClick = { launchLogin(LoginPlatform.Bilibili) }) { Text("登录 B 站") }
+                                    if (showBiliLoginAction) {
+                                        SaltTextButton(onClick = { launchLogin(LoginPlatform.Bilibili) }) { Text("登录 B 站") }
                                     }
-                                    if (currentTab == 0 && detailRetry && !retryParse) {
-                                        TextButton(enabled = !sizeLoading, onClick = {
+                                    if (showDetailRetryAction) {
+                                        SaltTextButton(enabled = !sizeLoading, onClick = {
                                             if (!componentState.ready && failureKind in listOf("XComponent", "YoutubeComponent", "YoutubeConnect")) {
                                                 requestComponent("details")
                                             } else {
@@ -648,12 +696,14 @@ class MainActivity : ComponentActivity() {
                                             }
                                         }) { Text("重新获取画质") }
                                     }
-                                    if (currentTab == 0 && retryParse) {
-                                        TextButton(enabled = !loading, onClick = { parseLinks() }) { Text("重新解析") }
+                                    if (showReparseAction) {
+                                        SaltTextButton(enabled = !loading, onClick = { parseLinks() }) { Text("重新解析") }
                                     }
                                 }
-                            }
-                        }
+                            } else {
+                                null
+                            },
+                        )
 
                         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                             fun smoothStep(x: Float): Float {
@@ -1141,6 +1191,9 @@ class MainActivity : ComponentActivity() {
                                         completedSelectionMode = false
                                         selectedCompleted = emptySet()
                                     },
+                                    backdropLayer = contentBackdropLayer,
+                                    backdropCoords = contentCoords,
+                                    observeBackdrop = observeBackdrop,
                                 )
                             }
                             "Nav" -> {
@@ -1159,6 +1212,9 @@ class MainActivity : ComponentActivity() {
                                     bounciness = navBounciness,
                                     liquidDeform = navLiquidDeform,
                                     dockPressScale = navDockPressScale,
+                                    backdropLayer = contentBackdropLayer,
+                                    backdropCoords = contentCoords,
+                                    observeBackdrop = observeBackdrop,
                                 )
                             }
                             else -> Box(Modifier.size(0.dp))

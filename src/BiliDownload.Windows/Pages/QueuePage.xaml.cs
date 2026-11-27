@@ -17,6 +17,7 @@ public sealed partial class QueuePage : Page
     private readonly ObservableCollection<DownloadTaskViewModel> rows = new();
     private bool smoke;
     private bool selectionMode;
+    private CancellationTokenSource? noticeCts;
 
     public void ShowSmokeState(DownloadState state)
     {
@@ -44,8 +45,9 @@ public sealed partial class QueuePage : Page
     {
         InitializeComponent();
         Tasks.ItemsSource = rows;
+        UiMotion.BindNoticeHost(NoticeHost, Notice, NoticeProgress, () => { noticeCts?.Cancel(); noticeCts?.Dispose(); noticeCts = null; });
         Loaded += (_, _) => { App.Services.Queue.Changed += Refresh; Refresh(); };
-        Unloaded += (_, _) => App.Services.Queue.Changed -= Refresh;
+        Unloaded += (_, _) => { App.Services.Queue.Changed -= Refresh; noticeCts?.Cancel(); };
         ActualThemeChanged += (_, _) => { foreach (var row in rows) row.RefreshTheme(); };
     }
 
@@ -110,15 +112,16 @@ public sealed partial class QueuePage : Page
 
     private void UpdateBatchChrome()
     {
+        var wasVisible = BatchBar.Visibility == Visibility.Visible;
         if (!completed || !selectionMode)
         {
-            BatchBar.Visibility = Visibility.Collapsed;
+            if (wasVisible) UiMotion.AnimateHide(BatchBar, toOffsetY: -4, durationMs: 160);
             BatchSelectButton.Content = "批量选择";
             foreach (var row in rows) row.SetSelectionMode(false);
             return;
         }
         foreach (var row in rows) row.SetSelectionMode(true);
-        BatchBar.Visibility = Visibility.Visible;
+        if (!wasVisible) UiMotion.AnimateReveal(BatchBar, fromOffsetY: -6, durationMs: 200);
         BatchSelectButton.Content = "退出多选";
         var count = rows.Count(r => r.IsSelected);
         SelectedCountText.Text = $"已选 {count} 项";
@@ -333,5 +336,6 @@ public sealed partial class QueuePage : Page
         return item.FilePath;
     }
 
-    private void Show(string text, InfoBarSeverity severity) { Notice.Message = text; Notice.Severity = severity; Notice.IsOpen = true; }
+    private void Show(string text, InfoBarSeverity severity) =>
+        UiMotion.ShowAnimatedNotice(NoticeHost, Notice, NoticeProgress, text, severity, hasActions: false, noticeCts, c => noticeCts = c);
 }

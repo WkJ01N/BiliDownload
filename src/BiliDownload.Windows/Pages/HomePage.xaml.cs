@@ -20,6 +20,7 @@ public sealed partial class HomePage : Page
     private string? qualityReference;
     private bool updatingQuality;
     private bool youtubeRecovery, audioRecovery, xAccountRecovery, youtubeSessionRecovery;
+    private CancellationTokenSource? noticeCts;
 
     public async Task ReparseAsync(string url, bool audio)
     {
@@ -170,7 +171,12 @@ public sealed partial class HomePage : Page
         RefreshNames();
     }
 
-    public HomePage() { InitializeComponent(); NavigationCacheMode = NavigationCacheMode.Enabled; }
+    public HomePage()
+    {
+        InitializeComponent();
+        NavigationCacheMode = NavigationCacheMode.Enabled;
+        UiMotion.BindNoticeHost(NoticeHost, Notice, NoticeProgress, () => { noticeCts?.Cancel(); noticeCts?.Dispose(); noticeCts = null; });
+    }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
@@ -216,7 +222,9 @@ public sealed partial class HomePage : Page
         var sameInput = preserveSelection && lastInput == requestInput;
         var previousIds = sameInput ? Results.SelectedItems.Cast<ResultRow>().Select(r => r.Item).Select(i => i.Id).ToHashSet() : null;
         var previousQuality = sameInput ? (QualityBox.SelectedItem as MediaVariant)?.Quality : null;
-        Busy.IsActive = true; ParseButton.IsEnabled = Results.IsEnabled = DownloadButton.IsEnabled = false; Notice.IsOpen = false;
+        Busy.IsActive = true; ParseButton.IsEnabled = Results.IsEnabled = DownloadButton.IsEnabled = false;
+        noticeCts?.Cancel(); noticeCts?.Dispose(); noticeCts = null;
+        Notice.IsOpen = false; NoticeProgress.Visibility = Visibility.Collapsed; NoticeHost.Visibility = Visibility.Collapsed;
         LoginButton.Visibility = RetryButton.Visibility = ComponentButton.Visibility = Visibility.Collapsed; RetryButton.IsEnabled = false;
         if (!sameInput)
         {
@@ -258,7 +266,17 @@ public sealed partial class HomePage : Page
             items = items.OrderBy(i => i.Music).ToArray();
             resolvedItems = items;
             EmptyGuide.Visibility = Visibility.Collapsed;
-            ResultTitle.Visibility = ResultActions.Visibility = Results.Visibility = Visibility.Visible;
+            var revealResults = ResultActions.Visibility != Visibility.Visible;
+            ResultTitle.Visibility = Visibility.Visible;
+            if (revealResults)
+            {
+                UiMotion.AnimateReveal(ResultActions, fromOffsetY: -6, durationMs: 220);
+                UiMotion.AnimateReveal(Results, fromOffsetY: 10, durationMs: 250);
+            }
+            else
+            {
+                ResultActions.Visibility = Results.Visibility = Visibility.Visible;
+            }
             Results.ItemsSource = items.Select(i => new ResultRow(i, NameFor(i))).ToArray(); ResultTitle.Text = $"找到 {items.Length} 个条目"; lastInput = requestInput;
             var targets = catalogs.Where(c => c.TargetItemId != null).Select(c => c.TargetItemId).ToHashSet();
             var selected = catalogs.SelectMany(c => c.Items.Where(i => i.X != null && c.TargetItemId == null && i.X.Kind != "markdown")).Select(i => i.Id).ToHashSet();
@@ -497,5 +515,9 @@ public sealed partial class HomePage : Page
         return variants.Where(v => Height(v) <= Height(limit)).MaxBy(Height);
     }
 
-    private void Show(string text, InfoBarSeverity severity) { Notice.Message = text; Notice.Severity = severity; Notice.IsOpen = true; }
+    private void Show(string text, InfoBarSeverity severity)
+    {
+        var hasActions = LoginButton.Visibility == Visibility.Visible || RetryButton.Visibility == Visibility.Visible || ComponentButton.Visibility == Visibility.Visible;
+        UiMotion.ShowAnimatedNotice(NoticeHost, Notice, NoticeProgress, text, severity, hasActions, noticeCts, c => noticeCts = c);
+    }
 }

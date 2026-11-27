@@ -23,6 +23,7 @@ public sealed class WebLoginWindow : Window
     private readonly Grid root = new();
     private bool finished;
     private bool initialized;
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? pollTimer;
 
     public static Task<LoginResult> ShowAsync(WebLoginPlatform platform)
     {
@@ -81,6 +82,8 @@ public sealed class WebLoginWindow : Window
 
         Closed += (_, _) =>
         {
+            pollTimer?.Stop();
+            pollTimer = null;
             try { webView.Close(); } catch { }
             Resolve(new(LoginOutcome.Canceled));
             _ = CleanupProfileAsync(tempProfileDir);
@@ -105,6 +108,13 @@ public sealed class WebLoginWindow : Window
                 progressBar.Visibility = Visibility.Collapsed;
                 await RefreshDetectedHintAsync();
             };
+            pollTimer = DispatcherQueue.CreateTimer();
+            pollTimer.Interval = TimeSpan.FromMilliseconds(800);
+            pollTimer.Tick += async (_, _) =>
+            {
+                if (!finished) await RefreshDetectedHintAsync();
+            };
+            pollTimer.Start();
             var url = platform == WebLoginPlatform.X
                 ? "https://x.com/i/flow/login"
                 : "https://accounts.google.com/ServiceLogin?service=youtube&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2F";

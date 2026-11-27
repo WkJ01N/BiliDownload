@@ -12,6 +12,9 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContract
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,7 +28,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import io.github.bilidownload.ui.components.SaltAlertBanner
+import io.github.bilidownload.ui.components.SaltAnimatedAlertBanner
+import io.github.bilidownload.ui.components.SaltButton
+import io.github.bilidownload.ui.components.SaltIconButton
 import kotlinx.coroutines.*
 import java.net.URI
 
@@ -63,10 +68,24 @@ class LoginActivity : ComponentActivity() {
         uri.scheme == "https" && uri.port == -1 && domains.any { host == it || host.endsWith(".$it") }
     }.getOrDefault(false)
 
+    private fun readBilibiliCookie(cm: CookieManager): String {
+        val origins = listOf(
+            "https://www.bilibili.com/",
+            "https://m.bilibili.com/",
+            "https://passport.bilibili.com/",
+        )
+        for (origin in origins) {
+            val cookie = cm.getCookie(origin).orEmpty()
+            if (cookie.contains("SESSDATA=")) return cookie
+        }
+        return ""
+    }
+
     private fun hasDetectedSession(platform: LoginPlatform): Boolean {
         val cm = CookieManager.getInstance()
+        cm.flush()
         return when (platform) {
-            LoginPlatform.Bilibili -> cm.getCookie("https://www.bilibili.com/").orEmpty().contains("SESSDATA=")
+            LoginPlatform.Bilibili -> readBilibiliCookie(cm).isNotEmpty()
             LoginPlatform.YouTube -> YoutubeCookies.hasAuthCookies(
                 listOfNotNull(
                     cm.getCookie("https://www.youtube.com/"),
@@ -121,9 +140,76 @@ class LoginActivity : ComponentActivity() {
                 var message by remember { mutableStateOf("") }
                 var authReady by remember { mutableStateOf(false) }
                 var verifying by remember { mutableStateOf(false) }
+                var completed by remember { mutableStateOf(false) }
                 var pageProgress by remember { mutableIntStateOf(0) }
                 var canGoBack by remember { mutableStateOf(false) }
                 val scope = rememberCoroutineScope()
+
+                suspend fun completeLogin(autoTriggered: Boolean) {
+                    if (verifying || completed) return
+                    verifying = true
+                    try {
+                        val cm = CookieManager.getInstance()
+                        cm.flush()
+                        when (platform) {
+                            LoginPlatform.Bilibili -> {
+                                val cookie = readBilibiliCookie(cm)
+                                if (cookie.isEmpty()) throw BiliException("还没有获取到登录信息，请先完成网页登录。")
+                                val nav = BiliApplication.api.api("https://api.bilibili.com/x/web-interface/nav", cookie)
+                                if (!nav.optBoolean("isLogin")) throw BiliException("登录验证未通过，请重试。")
+                                BiliApplication.session.save(cookie, nav.optString("uname"))
+                                BiliApplication.session.state = SessionState.Authenticated
+                            }
+                            LoginPlatform.YouTube -> {
+                                val pairs = listOf(
+                                    "youtube.com" to "https://www.youtube.com/",
+                                    "m.youtube.com" to "https://m.youtube.com/",
+                                    "music.youtube.com" to "https://music.youtube.com/",
+                                ).mapNotNull { (domain, url) ->
+                                    cm.getCookie(url)?.let { domain to it }
+                                }
+                                val netscape = YoutubeCookies.fromWebViewCookies(pairs, x = false)
+                                BiliApplication.youtube.session.save(netscape)
+                            }
+                            LoginPlatform.X -> {
+                                val pairs = listOf(
+                                    "x.com" to "https://x.com/",
+                                    "twitter.com" to "https://twitter.com/",
+                                ).mapNotNull { (domain, url) ->
+                                    cm.getCookie(url)?.let { domain to it }
+                                }
+                                val netscape = YoutubeCookies.fromWebViewCookies(pairs, x = true)
+                                BiliApplication.youtube.xSession.save(netscape)
+                            }
+                        }
+                        completed = true
+                        message = ""
+                        setResult(RESULT_OK)
+                        cm.removeAllCookies { finish() }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        if (!autoTriggered) {
+                            message = if (e is BiliException) e.message.orEmpty() else "登录验证失败，请检查网络后重试。"
+                            setResult(RESULT_FIRST_USER, Intent().putExtra("message", message))
+                        }
+                    } finally {
+                        verifying = false
+                    }
+                }
+
+                // SPA logins (Bilibili / YouTube / X) often set auth cookies via XHR without full page reload
+                LaunchedEffect(platform) {
+                    while (!completed) {
+                        delay(600L)
+                        if (!verifying && hasDetectedSession(platform)) {
+                            authReady = true
+                            if (platform == LoginPlatform.Bilibili) {
+                                completeLogin(autoTriggered = true)
+                            }
+                        }
+                    }
+                }
 
                 BackHandler(enabled = canGoBack) { web?.goBack() }
 
@@ -140,7 +226,7 @@ class LoginActivity : ComponentActivity() {
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            IconButton(onClick = { setResult(RESULT_CANCELED); finish() }) {
+                            SaltIconButton(onClick = { setResult(RESULT_CANCELED); finish() }) {
                                 Icon(painterResource(R.drawable.ic_arrow_back), contentDescription = "返回")
                             }
                             Text(
@@ -148,94 +234,47 @@ class LoginActivity : ComponentActivity() {
                                 style = MaterialTheme.typography.titleLarge,
                                 modifier = Modifier.weight(1f),
                             )
-                            IconButton(onClick = { web?.reload() }) {
+                            SaltIconButton(onClick = { web?.reload() }) {
                                 Icon(painterResource(R.drawable.ic_refresh), contentDescription = "刷新")
                             }
-                            Button(
-                                enabled = !verifying,
+                            SaltButton(
+                                enabled = !verifying && !completed,
                                 shape = RoundedCornerShape(12.dp),
-                                onClick = {
-                                    scope.launch {
-                                        verifying = true
-                                        try {
-                                            val cm = CookieManager.getInstance()
-                                            cm.flush()
-                                            when (platform) {
-                                                LoginPlatform.Bilibili -> {
-                                                    val cookie = cm.getCookie("https://www.bilibili.com/").orEmpty()
-                                                    if (!cookie.contains("SESSDATA=")) throw BiliException("还没有获取到登录信息，请先完成网页登录。")
-                                                    val nav = BiliApplication.api.api("https://api.bilibili.com/x/web-interface/nav", cookie)
-                                                    if (!nav.optBoolean("isLogin")) throw BiliException("登录验证未通过，请重试。")
-                                                    BiliApplication.session.save(cookie, nav.optString("uname"))
-                                                    BiliApplication.session.state = SessionState.Authenticated
-                                                }
-                                                LoginPlatform.YouTube -> {
-                                                    val pairs = listOf(
-                                                        "youtube.com" to "https://www.youtube.com/",
-                                                        "m.youtube.com" to "https://m.youtube.com/",
-                                                        "music.youtube.com" to "https://music.youtube.com/",
-                                                    ).mapNotNull { (domain, url) ->
-                                                        cm.getCookie(url)?.let { domain to it }
-                                                    }
-                                                    val netscape = YoutubeCookies.fromWebViewCookies(pairs, x = false)
-                                                    BiliApplication.youtube.session.save(netscape)
-                                                }
-                                                LoginPlatform.X -> {
-                                                    val pairs = listOf(
-                                                        "x.com" to "https://x.com/",
-                                                        "twitter.com" to "https://twitter.com/",
-                                                    ).mapNotNull { (domain, url) ->
-                                                        cm.getCookie(url)?.let { domain to it }
-                                                    }
-                                                    val netscape = YoutubeCookies.fromWebViewCookies(pairs, x = true)
-                                                    BiliApplication.youtube.xSession.save(netscape)
-                                                }
-                                            }
-                                            setResult(RESULT_OK)
-                                            cm.removeAllCookies { finish() }
-                                        } catch (e: CancellationException) {
-                                            throw e
-                                        } catch (e: Exception) {
-                                            message = if (e is BiliException) e.message.orEmpty() else "登录验证失败，请检查网络后重试。"
-                                            setResult(RESULT_FIRST_USER, Intent().putExtra("message", message))
-                                        } finally {
-                                            verifying = false
-                                        }
-                                    }
-                                },
+                                onClick = { scope.launch { completeLogin(autoTriggered = false) } },
                             ) {
-                                Text(if (verifying) "验证中…" else "完成登录")
+                                Text(if (verifying || completed) "验证中…" else "完成登录")
                             }
                         }
 
-                        if (pageProgress in 1..99) {
-                            LinearProgressIndicator(
-                                progress = { pageProgress / 100f },
-                                modifier = Modifier.fillMaxWidth().height(2.dp),
-                            )
-                        } else {
+                        Box(modifier = Modifier.fillMaxWidth()) {
                             HorizontalDivider(thickness = 0.5.dp, color = saltColors().subtleBorder)
-                        }
-
-                        if (authReady && message.isEmpty()) {
-                            Box(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                                SaltAlertBanner(
-                                    message = "已检测到登录状态，点击右上角「完成登录」即可保存。",
-                                    isError = false,
-                                    onDismiss = { authReady = false },
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = pageProgress in 1..99,
+                                enter = fadeIn(tween(150)),
+                                exit = fadeOut(tween(220)),
+                            ) {
+                                LinearProgressIndicator(
+                                    progress = { pageProgress / 100f },
+                                    modifier = Modifier.fillMaxWidth().height(2.dp),
                                 )
                             }
                         }
 
-                        if (message.isNotEmpty()) {
-                            Box(Modifier.padding(12.dp)) {
-                                SaltAlertBanner(
-                                    message = message,
-                                    isError = true,
-                                    onDismiss = { message = "" },
-                                )
-                            }
+                        val bannerText = when {
+                            message.isNotEmpty() -> message
+                            platform == LoginPlatform.Bilibili && (verifying || completed) -> "检测到登录成功，正在验证并保存…"
+                            authReady -> "已检测到登录状态，点击右上角「完成登录」即可保存。"
+                            else -> ""
                         }
+                        SaltAnimatedAlertBanner(
+                            visible = bannerText.isNotEmpty(),
+                            message = bannerText,
+                            isError = message.isNotEmpty(),
+                            onDismiss = {
+                                if (message.isNotEmpty()) message = "" else authReady = false
+                            },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        )
 
                         Box(modifier = Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
                             AndroidView(
@@ -254,7 +293,6 @@ class LoginActivity : ComponentActivity() {
                                         cm.setAcceptThirdPartyCookies(this, true)
                                         settings.javaScriptEnabled = true
                                         settings.domStorageEnabled = true
-                                        settings.databaseEnabled = true
                                         settings.useWideViewPort = true
                                         settings.loadWithOverviewMode = true
                                         settings.textZoom = 100
@@ -270,6 +308,14 @@ class LoginActivity : ComponentActivity() {
                                                 .replace("; wv", "")
                                                 .replace(Regex("Version/\\d+\\.\\d+\\s+"), "")
                                         }
+                                        fun checkSessionNow() {
+                                            if (!completed && !verifying && hasDetectedSession(platform)) {
+                                                authReady = true
+                                                if (platform == LoginPlatform.Bilibili) {
+                                                    scope.launch { completeLogin(autoTriggered = true) }
+                                                }
+                                            }
+                                        }
                                         webChromeClient = object : WebChromeClient() {
                                             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                                                 pageProgress = newProgress
@@ -282,16 +328,16 @@ class LoginActivity : ComponentActivity() {
                                             override fun onPageFinished(view: WebView?, url: String?) {
                                                 super.onPageFinished(view, url)
                                                 canGoBack = view?.canGoBack() == true
-                                                if (hasDetectedSession(platform)) authReady = true
+                                                checkSessionNow()
                                             }
 
                                             override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
                                                 super.doUpdateVisitedHistory(view, url, isReload)
                                                 canGoBack = view?.canGoBack() == true
-                                                if (hasDetectedSession(platform)) authReady = true
+                                                checkSessionNow()
                                             }
                                         }
-                                        loadUrl(startUrl)
+                                        cm.removeAllCookies { loadUrl(startUrl) }
                                     }
                                 },
                                 modifier = Modifier.fillMaxSize(),

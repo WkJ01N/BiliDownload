@@ -12,8 +12,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import io.github.bilidownload.ui.components.BadgeTone
+import io.github.bilidownload.ui.components.SaltButton
 import io.github.bilidownload.ui.components.SaltItemRow
 import io.github.bilidownload.ui.components.SaltStatusBadge
+import io.github.bilidownload.ui.components.SaltTextButton
+import io.github.bilidownload.ui.components.SaltTonalButton
 
 @Composable
 internal fun MediaComponentSetting(state: ComponentState, open: () -> Unit) {
@@ -25,7 +28,7 @@ internal fun MediaComponentSetting(state: ComponentState, open: () -> Unit) {
             when {
                 state.ready -> SaltStatusBadge("已就绪", BadgeTone.Success)
                 state.checking -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                else -> FilledTonalButton(
+                else -> SaltTonalButton(
                     onClick = open,
                     shape = RoundedCornerShape(10.dp),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
@@ -84,13 +87,13 @@ internal fun MediaComponentDialog(state: ComponentState, downloadBytes: Long, on
         },
         confirmButton = {
             if (!state.downloading) {
-                Button(onClick = onInstall, shape = RoundedCornerShape(10.dp)) {
+                SaltButton(onClick = onInstall, shape = RoundedCornerShape(10.dp)) {
                     Text(if (state.error == null) "下载" else "重试")
                 }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(if (state.downloading) "取消下载" else "取消") }
+            SaltTextButton(onClick = onDismiss) { Text(if (state.downloading) "取消下载" else "取消") }
         },
     )
 }

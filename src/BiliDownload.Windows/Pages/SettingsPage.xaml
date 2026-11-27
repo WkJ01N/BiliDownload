@@ -113,11 +113,27 @@
                 <TextBlock Text="外观模式" FontWeight="SemiBold"/>
                 <TextBlock Text="切换浅色、深色或跟随系统设置" Style="{StaticResource SaltCaptionStyle}"/>
               </StackPanel>
-              <ComboBox x:Name="ThemeBox" Grid.Column="2" MinWidth="136" SelectedValuePath="Tag" SelectionChanged="ThemeBox_Changed">
-                <ComboBoxItem Content="跟随系统" Tag="Default"/>
-                <ComboBoxItem Content="浅色" Tag="Light"/>
-                <ComboBoxItem Content="深色" Tag="Dark"/>
-              </ComboBox>
+              <Border x:Name="ThemeSegment" Grid.Column="2" Style="{StaticResource SaltSubCardStyle}" Padding="3" CornerRadius="10"
+                      HorizontalAlignment="Right" SizeChanged="ThemeSegment_SizeChanged">
+                <Grid>
+                  <Border x:Name="ThemePill" HorizontalAlignment="Left" VerticalAlignment="Stretch"
+                          Background="{ThemeResource SaltCardBackgroundBrush}"
+                          BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8"/>
+                  <Grid ColumnSpacing="2">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="78"/>
+                      <ColumnDefinition Width="78"/>
+                      <ColumnDefinition Width="78"/>
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="ThemeBtnDefault" Content="跟随系统" Tag="Default" Click="ThemeSegment_Click"
+                            Background="Transparent" BorderThickness="0" CornerRadius="8" Padding="0,6" FontSize="13" HorizontalAlignment="Stretch"/>
+                    <Button x:Name="ThemeBtnLight" Grid.Column="1" Content="浅色" Tag="Light" Click="ThemeSegment_Click"
+                            Background="Transparent" BorderThickness="0" CornerRadius="8" Padding="0,6" FontSize="13" HorizontalAlignment="Stretch"/>
+                    <Button x:Name="ThemeBtnDark" Grid.Column="2" Content="深色" Tag="Dark" Click="ThemeSegment_Click"
+                            Background="Transparent" BorderThickness="0" CornerRadius="8" Padding="0,6" FontSize="13" HorizontalAlignment="Stretch"/>
+                  </Grid>
+                </Grid>
+              </Border>
             </Grid>
 
             <Border Style="{StaticResource SaltInsetDividerStyle}"/>
@@ -170,11 +186,27 @@
                 <TextBlock Text="列表显示密度" FontWeight="SemiBold"/>
                 <TextBlock Text="调整下载队列与已完成卡片大小与间距" Style="{StaticResource SaltCaptionStyle}"/>
               </StackPanel>
-              <ComboBox x:Name="DensityBox" Grid.Column="2" MinWidth="136" SelectedValuePath="Tag" SelectionChanged="DensityBox_Changed">
-                <ComboBoxItem Content="紧凑" Tag="Compact"/>
-                <ComboBoxItem Content="标准" Tag="Standard"/>
-                <ComboBoxItem Content="宽松" Tag="Comfortable"/>
-              </ComboBox>
+              <Border x:Name="DensitySegment" Grid.Column="2" Style="{StaticResource SaltSubCardStyle}" Padding="3" CornerRadius="10"
+                      HorizontalAlignment="Right" SizeChanged="DensitySegment_SizeChanged">
+                <Grid>
+                  <Border x:Name="DensityPill" HorizontalAlignment="Left" VerticalAlignment="Stretch"
+                          Background="{ThemeResource SaltCardBackgroundBrush}"
+                          BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8"/>
+                  <Grid ColumnSpacing="2">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="78"/>
+                      <ColumnDefinition Width="78"/>
+                      <ColumnDefinition Width="78"/>
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="DensityBtnCompact" Content="紧凑" Tag="Compact" Click="DensitySegment_Click"
+                            Background="Transparent" BorderThickness="0" CornerRadius="8" Padding="0,6" FontSize="13" HorizontalAlignment="Stretch"/>
+                    <Button x:Name="DensityBtnStandard" Grid.Column="1" Content="标准" Tag="Standard" Click="DensitySegment_Click"
+                            Background="Transparent" BorderThickness="0" CornerRadius="8" Padding="0,6" FontSize="13" HorizontalAlignment="Stretch"/>
+                    <Button x:Name="DensityBtnComfortable" Grid.Column="2" Content="宽松" Tag="Comfortable" Click="DensitySegment_Click"
+                            Background="Transparent" BorderThickness="0" CornerRadius="8" Padding="0,6" FontSize="13" HorizontalAlignment="Stretch"/>
+                  </Grid>
+                </Grid>
+              </Border>
             </Grid>
           </StackPanel>
         </Border>
@@ -391,7 +423,10 @@
       <!-- Save & Notice -->
       <StackPanel Spacing="10">
         <Button Content="保存设置" Style="{StaticResource SaltPillAccentButtonStyle}" HorizontalAlignment="Left" Click="Save_Click"/>
-        <InfoBar x:Name="Notice" IsOpen="False" CornerRadius="12"/>
+        <Grid x:Name="NoticeHost" Visibility="Collapsed" CornerRadius="12">
+          <InfoBar x:Name="Notice" IsOpen="False" CornerRadius="12"/>
+          <Border x:Name="NoticeProgress" Visibility="Collapsed" CornerRadius="12" IsHitTestVisible="False"/>
+        </Grid>
       </StackPanel>
 
       <!-- Section 6: About -->

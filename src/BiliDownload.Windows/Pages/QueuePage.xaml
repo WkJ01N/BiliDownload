@@ -28,7 +28,10 @@
       </StackPanel>
     </Grid>
 
-    <InfoBar x:Name="Notice" Grid.Row="1" IsOpen="False" CornerRadius="12"/>
+    <Grid x:Name="NoticeHost" Grid.Row="1" Visibility="Collapsed" CornerRadius="12">
+      <InfoBar x:Name="Notice" IsOpen="False" CornerRadius="12"/>
+      <Border x:Name="NoticeProgress" Visibility="Collapsed" CornerRadius="12" IsHitTestVisible="False"/>
+    </Grid>
 
     <Border x:Name="BatchBar" Grid.Row="2" Style="{StaticResource SaltSubCardStyle}" Visibility="Collapsed" Padding="14,10">
       <Grid ColumnSpacing="12">
@@ -62,6 +65,12 @@
     </Border>
 
     <ListView x:Name="Tasks" Grid.Row="3" SelectionMode="None" IsItemClickEnabled="True" ItemClick="Tasks_ItemClick" HorizontalContentAlignment="Stretch">
+      <ListView.ItemContainerTransitions>
+        <TransitionCollection>
+          <AddDeleteThemeTransition/>
+          <ReorderThemeTransition/>
+        </TransitionCollection>
+      </ListView.ItemContainerTransitions>
       <ListView.ItemContainerStyle>
         <Style TargetType="ListViewItem">
           <Setter Property="HorizontalContentAlignment" Value="Stretch"/>

@@ -5,11 +5,15 @@ import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -17,6 +21,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -29,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -167,11 +174,11 @@ internal fun SettingsScreen(
                                 )
                             }
                             if (!account.loggedIn) {
-                                Button(onClick = onLogin, shape = RoundedCornerShape(10.dp)) {
+                                SaltButton(onClick = onLogin, shape = RoundedCornerShape(10.dp)) {
                                     Text("登录 B 站")
                                 }
                             } else {
-                                FilledTonalButton(onClick = onLogout, shape = RoundedCornerShape(10.dp)) {
+                                SaltTonalButton(onClick = onLogout, shape = RoundedCornerShape(10.dp)) {
                                     Text("退出登录")
                                 }
                             }
@@ -188,7 +195,7 @@ internal fun SettingsScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                                 ) {
-                                    FilledTonalButton(
+                                    SaltTonalButton(
                                         onClick = onLoginYoutube,
                                         shape = RoundedCornerShape(10.dp),
                                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
@@ -196,7 +203,7 @@ internal fun SettingsScreen(
                                         Text(if (ytAccount.loggedIn) "重新登录" else "登录")
                                     }
                                     Box {
-                                        IconButton(
+                                        SaltIconButton(
                                             onClick = { ytMenuOpen = true },
                                             modifier = Modifier.size(34.dp),
                                         ) {
@@ -234,7 +241,7 @@ internal fun SettingsScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                                 ) {
-                                    FilledTonalButton(
+                                    SaltTonalButton(
                                         onClick = onLoginX,
                                         shape = RoundedCornerShape(10.dp),
                                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
@@ -242,7 +249,7 @@ internal fun SettingsScreen(
                                         Text(if (xAccount.loggedIn) "重新登录" else "登录")
                                     }
                                     Box {
-                                        IconButton(
+                                        SaltIconButton(
                                             onClick = { xMenuOpen = true },
                                             modifier = Modifier.size(34.dp),
                                         ) {
@@ -297,35 +304,11 @@ internal fun SettingsScreen(
                                 }
                             }
 
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(saltColors().subCard)
-                                    .padding(4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                listOf("Default" to "跟随系统", "Light" to "浅色", "Dark" to "深色").forEach { (value, label) ->
-                                    val selected = theme == value
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clip(RoundedCornerShape(9.dp))
-                                            .background(if (selected) saltColors().card else Color.Transparent)
-                                            .clickable { onThemeChange(value) }
-                                            .padding(vertical = 8.dp),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Text(
-                                            text = label,
-                                            style = MaterialTheme.typography.labelLarge.copy(
-                                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                            ),
-                                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                }
-                            }
+                            SaltSegmentedControl(
+                                options = listOf("Default" to "跟随系统", "Light" to "浅色", "Dark" to "深色"),
+                                selectedValue = theme,
+                                onSelect = onThemeChange,
+                            )
                         }
 
                         SaltInsetDivider()
@@ -358,19 +341,40 @@ internal fun SettingsScreen(
                             ) {
                                 listOf(AccentPreset.Pink, AccentPreset.Blue, AccentPreset.Jade, AccentPreset.Amber).forEach { preset ->
                                     val selected = accent == preset.key
+                                    val swatchInteraction = remember { MutableInteractionSource() }
+                                    val swatchPressed by swatchInteraction.collectIsPressedAsState()
+                                    val swatchScale by animateFloatAsState(
+                                        targetValue = when {
+                                            swatchPressed -> 0.90f
+                                            selected -> 1.08f
+                                            else -> 1.0f
+                                        },
+                                        animationSpec = spring(dampingRatio = 0.60f, stiffness = 480f),
+                                        label = "swatchScale_${preset.key}",
+                                    )
                                     Box(
                                         modifier = Modifier
                                             .size(34.dp)
+                                            .graphicsLayer {
+                                                scaleX = swatchScale
+                                                scaleY = swatchScale
+                                            }
                                             .clip(CircleShape)
                                             .background(preset.swatchColor)
                                             .then(
                                                 if (selected) Modifier.border(2.5.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
                                                 else Modifier,
                                             )
-                                            .clickable { onAccentChange(preset.key) },
+                                            .clickable(interactionSource = swatchInteraction, indication = null) {
+                                                onAccentChange(preset.key)
+                                            },
                                         contentAlignment = Alignment.Center,
                                     ) {
-                                        if (selected) {
+                                        androidx.compose.animation.AnimatedVisibility(
+                                            visible = selected,
+                                            enter = scaleIn(spring(dampingRatio = 0.62f, stiffness = 520f)) + fadeIn(tween(130)),
+                                            exit = scaleOut(tween(110)) + fadeOut(tween(100)),
+                                        ) {
                                             Icon(
                                                 painter = painterResource(R.drawable.ic_check),
                                                 contentDescription = preset.label,
@@ -384,11 +388,14 @@ internal fun SettingsScreen(
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                                     Spacer(Modifier.weight(1f))
                                     val dynamicSelected = accent == AccentPreset.Dynamic.key
+                                    val chipInteraction = remember { MutableInteractionSource() }
                                     FilterChip(
                                         selected = dynamicSelected,
                                         onClick = { onAccentChange(if (dynamicSelected) AccentPreset.Pink.key else AccentPreset.Dynamic.key) },
                                         label = { Text("动态取色") },
                                         shape = RoundedCornerShape(20.dp),
+                                        interactionSource = chipInteraction,
+                                        modifier = Modifier.saltPressBounce(chipInteraction, pressedScale = 0.93f, pressedAlpha = 0.85f),
                                     )
                                 }
                             }
@@ -412,35 +419,11 @@ internal fun SettingsScreen(
                                 }
                             }
 
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(saltColors().subCard)
-                                    .padding(4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                listOf("Compact" to "紧凑", "Standard" to "标准", "Comfortable" to "宽松").forEach { (value, label) ->
-                                    val selected = listDensity == value
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clip(RoundedCornerShape(9.dp))
-                                            .background(if (selected) saltColors().card else Color.Transparent)
-                                            .clickable { onListDensityChange(value) }
-                                            .padding(vertical = 8.dp),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Text(
-                                            text = label,
-                                            style = MaterialTheme.typography.labelLarge.copy(
-                                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                            ),
-                                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                }
-                            }
+                            SaltSegmentedControl(
+                                options = listOf("Compact" to "紧凑", "Standard" to "标准", "Comfortable" to "宽松"),
+                                selectedValue = listDensity,
+                                onSelect = onListDensityChange,
+                            )
                         }
                     }
                 }
@@ -465,35 +448,11 @@ internal fun SettingsScreen(
                                 }
                             }
 
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(saltColors().subCard)
-                                    .padding(4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                listOf("SharedAxis" to "轴向滑移", "Parallax" to "视差推拉", "BreathFade" to "呼吸淡入").forEach { (value, label) ->
-                                    val selected = pageAnimStyle == value
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clip(RoundedCornerShape(9.dp))
-                                            .background(if (selected) saltColors().card else Color.Transparent)
-                                            .clickable { onPageAnimStyleChange(value) }
-                                            .padding(vertical = 8.dp),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Text(
-                                            text = label,
-                                            style = MaterialTheme.typography.labelLarge.copy(
-                                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                            ),
-                                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                }
-                            }
+                            SaltSegmentedControl(
+                                options = listOf("SharedAxis" to "轴向滑移", "Parallax" to "视差推拉", "BreathFade" to "呼吸淡入"),
+                                selectedValue = pageAnimStyle,
+                                onSelect = onPageAnimStyleChange,
+                            )
 
                             val pageChevronRotation by animateFloatAsState(
                                 targetValue = if (showPageAnimParams) 90f else 0f,
@@ -572,7 +531,7 @@ internal fun SettingsScreen(
                                             modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
                                             horizontalArrangement = Arrangement.End,
                                         ) {
-                                            TextButton(
+                                            SaltTextButton(
                                                 onClick = onResetPageAnim,
                                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                             ) {
@@ -673,7 +632,7 @@ internal fun SettingsScreen(
                                         modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
                                         horizontalArrangement = Arrangement.End,
                                     ) {
-                                        TextButton(
+                                        SaltTextButton(
                                             onClick = onResetNavAnim,
                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                         ) {
@@ -706,10 +665,10 @@ internal fun SettingsScreen(
                             modifier = Modifier.padding(start = 66.dp, end = 16.dp, bottom = 12.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            FilledTonalButton(onClick = onPickDirectory, shape = RoundedCornerShape(10.dp)) {
+                            SaltTonalButton(onClick = onPickDirectory, shape = RoundedCornerShape(10.dp)) {
                                 Text("选择目录")
                             }
-                            TextButton(onClick = onResetDirectory) {
+                            SaltTextButton(onClick = onResetDirectory) {
                                 Text("恢复默认")
                             }
                         }
@@ -737,28 +696,55 @@ internal fun SettingsScreen(
                                 placeholder = FileNaming.DEFAULT,
                             )
 
+                            val previewBg by animateColorAsState(
+                                targetValue = if (namingError == null) saltColors().subCard else saltColors().errorBg,
+                                animationSpec = tween(180),
+                                label = "namingPreviewBg",
+                            )
+                            val previewFg by animateColorAsState(
+                                targetValue = if (namingError == null) MaterialTheme.colorScheme.onSurfaceVariant else saltColors().error,
+                                animationSpec = tween(180),
+                                label = "namingPreviewFg",
+                            )
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(if (namingError == null) saltColors().subCard else saltColors().errorBg)
+                                    .background(previewBg)
                                     .padding(horizontal = 12.dp, vertical = 8.dp),
                             ) {
                                 Text(
                                     text = previewName,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = if (namingError == null) MaterialTheme.colorScheme.onSurfaceVariant else saltColors().error,
+                                    color = previewFg,
                                 )
                             }
 
-                            TextButton(
+                            val namingChevronRotation by animateFloatAsState(
+                                targetValue = if (showNamingVariables) 90f else 0f,
+                                animationSpec = spring(dampingRatio = 0.72f, stiffness = 480f),
+                                label = "namingChevron",
+                            )
+                            SaltTextButton(
                                 onClick = { showNamingVariables = !showNamingVariables },
                                 contentPadding = PaddingValues(horizontal = 4.dp),
                             ) {
                                 Text(if (showNamingVariables) "收起命名变量" else "展开并插入命名变量")
+                                Spacer(Modifier.width(4.dp))
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_chevron_right),
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .size(14.dp)
+                                        .rotate(namingChevronRotation),
+                                )
                             }
 
-                            if (showNamingVariables) {
+                            AnimatedVisibility(
+                                visible = showNamingVariables,
+                                enter = expandVertically() + fadeIn(),
+                                exit = shrinkVertically() + fadeOut(),
+                            ) {
                                 val variableLabels = remember {
                                     mapOf(
                                         "name" to "默认名称",
@@ -774,24 +760,27 @@ internal fun SettingsScreen(
                                     verticalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
                                     FileNaming.variables.forEach { variable ->
+                                        val chipInteraction = remember { MutableInteractionSource() }
                                         SuggestionChip(
                                             onClick = { onNamingDraftChange("$namingDraft{$variable}") },
                                             label = { Text(variableLabels.getValue(variable)) },
                                             shape = RoundedCornerShape(10.dp),
+                                            interactionSource = chipInteraction,
+                                            modifier = Modifier.saltPressBounce(chipInteraction, pressedScale = 0.93f, pressedAlpha = 0.85f),
                                         )
                                     }
                                 }
                             }
 
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(
+                                SaltButton(
                                     enabled = namingError == null,
                                     onClick = onSaveNaming,
                                     shape = RoundedCornerShape(10.dp),
                                 ) {
                                     Text("保存命名设置")
                                 }
-                                TextButton(onClick = onResetNaming) {
+                                SaltTextButton(onClick = onResetNaming) {
                                     Text("恢复默认")
                                 }
                             }
@@ -931,7 +920,7 @@ private fun SettingsSubHeader(title: String, onBack: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        IconButton(onClick = onBack, modifier = Modifier.size(38.dp)) {
+        SaltIconButton(onClick = onBack, modifier = Modifier.size(38.dp)) {
             Icon(
                 painter = painterResource(R.drawable.ic_arrow_back),
                 contentDescription = "返回设置",

@@ -60,6 +60,8 @@ public sealed partial class MainWindow : Window
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1180, 820));
 
         var isSmoke = Environment.GetCommandLineArgs().Any(a => a == "--smoke-test");
+        smokeMode = isSmoke;
+        UiMotion.IsSmokeTest = isSmoke;
         if (!isSmoke && MicaController.IsSupported())
         {
             SystemBackdrop = new MicaBackdrop();

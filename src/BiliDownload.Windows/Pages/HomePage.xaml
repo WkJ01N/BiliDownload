@@ -68,15 +68,18 @@
       </Border>
 
       <!-- Notice Banner -->
-      <InfoBar x:Name="Notice" IsOpen="False" IsClosable="True" CornerRadius="12">
-        <InfoBar.Content>
-          <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,6">
-            <Button x:Name="LoginButton" Content="登录 B 站" Visibility="Collapsed" Style="{StaticResource SaltCompactButtonStyle}" Click="Login_Click"/>
-            <Button x:Name="RetryButton" Content="重新解析" Visibility="Collapsed" Style="{StaticResource SaltCompactButtonStyle}" Click="Parse_Click"/>
-            <Button x:Name="ComponentButton" Content="安装 / 配置 FFmpeg" Visibility="Collapsed" Style="{StaticResource SaltCompactButtonStyle}" Click="Component_Click"/>
-          </StackPanel>
-        </InfoBar.Content>
-      </InfoBar>
+      <Grid x:Name="NoticeHost" Visibility="Collapsed" CornerRadius="12">
+        <InfoBar x:Name="Notice" IsOpen="False" IsClosable="True" CornerRadius="12">
+          <InfoBar.Content>
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,6">
+              <Button x:Name="LoginButton" Content="登录 B 站" Visibility="Collapsed" Style="{StaticResource SaltCompactButtonStyle}" Click="Login_Click"/>
+              <Button x:Name="RetryButton" Content="重新解析" Visibility="Collapsed" Style="{StaticResource SaltCompactButtonStyle}" Click="Parse_Click"/>
+              <Button x:Name="ComponentButton" Content="安装 / 配置 FFmpeg" Visibility="Collapsed" Style="{StaticResource SaltCompactButtonStyle}" Click="Component_Click"/>
+            </StackPanel>
+          </InfoBar.Content>
+        </InfoBar>
+        <Border x:Name="NoticeProgress" Visibility="Collapsed" CornerRadius="12" IsHitTestVisible="False"/>
+      </Grid>
 
       <!-- Empty Guidance Card -->
       <Border x:Name="EmptyGuide" Style="{StaticResource SaltCardStyle}">
@@ -159,6 +162,11 @@
       <!-- Results List -->
       <ListView ContainerContentChanging="ResultContainer_Changing" SelectionChanged="Estimate_Changed"
                 x:Name="Results" Visibility="Collapsed" SelectionMode="Multiple" MaxHeight="1100">
+        <ListView.ItemContainerTransitions>
+          <TransitionCollection>
+            <AddDeleteThemeTransition/>
+          </TransitionCollection>
+        </ListView.ItemContainerTransitions>
         <ListView.ItemContainerStyle>
           <Style TargetType="ListViewItem">
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>

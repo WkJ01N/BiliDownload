@@ -12,7 +12,7 @@
         <Image Source="ms-appx:///Assets/AppIcon.png" Width="22" Height="22" Stretch="UniformToFill"/>
         <TextBlock Text="BiliDownload" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
         <Border Style="{StaticResource SaltAccentPillBadgeStyle}" Padding="7,2" VerticalAlignment="Center">
-          <TextBlock Text="0.4.2" FontSize="11" FontWeight="SemiBold" Foreground="{ThemeResource SaltAccentSoftForegroundBrush}"/>
+          <TextBlock Text="0.4.3" FontSize="11" FontWeight="SemiBold" Foreground="{ThemeResource SaltAccentSoftForegroundBrush}"/>
         </Border>
       </StackPanel>
     </Grid>

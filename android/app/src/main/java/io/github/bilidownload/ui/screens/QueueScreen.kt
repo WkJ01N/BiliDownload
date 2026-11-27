@@ -3,9 +3,14 @@ package io.github.bilidownload.ui.screens
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -29,7 +34,7 @@ import io.github.bilidownload.*
 import io.github.bilidownload.R
 import io.github.bilidownload.ui.components.*
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun QueueScreen(
     completedOnly: Boolean,
@@ -95,7 +100,7 @@ fun QueueScreen(
                     if (completedOnly) {
                         SaltStatusBadge("共 ${visible.size} 项", if (visible.isNotEmpty()) BadgeTone.Success else BadgeTone.Neutral)
                         if (visible.isNotEmpty()) {
-                            FilledTonalButton(
+                            SaltTonalButton(
                                 onClick = {
                                     if (selectionMode) onExitSelection() else onEnterSelection(null)
                                 },
@@ -171,7 +176,7 @@ fun QueueScreen(
             }
             val isSelected = completedOnly && selectionMode && entry.id in selectedIds
             val cardModifier = if (completedOnly) {
-                Modifier.combinedClickable(
+                Modifier.saltCombinedPressBounce(
                     onClick = {
                         if (selectionMode) onToggleSelect(entry.id)
                     },
@@ -187,7 +192,7 @@ fun QueueScreen(
             }
 
             SaltCard(
-                modifier = cardModifier,
+                modifier = cardModifier.animateItem(),
                 highlighted = isSelected,
             ) {
                 when (listDensity) {
@@ -302,7 +307,11 @@ private fun CompactQueueCardContent(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            AnimatedVisibility(visible = completedOnly && selectionMode) {
+            AnimatedVisibility(
+                visible = completedOnly && selectionMode,
+                enter = expandHorizontally(spring(dampingRatio = 0.82f, stiffness = 460f)) + fadeIn(tween(150)),
+                exit = shrinkHorizontally(tween(140)) + fadeOut(tween(110)),
+            ) {
                 SaltCheckbox(checked = isSelected, onCheckedChange = { onToggleSelect() })
             }
             Cover(
@@ -339,14 +348,18 @@ private fun CompactQueueCardContent(
                     )
                 }
             }
-            if (!(completedOnly && selectionMode)) {
+            AnimatedVisibility(
+                visible = !(completedOnly && selectionMode),
+                enter = expandHorizontally(spring(dampingRatio = 0.84f, stiffness = 460f)) + fadeIn(tween(150)),
+                exit = shrinkHorizontally(tween(140)) + fadeOut(tween(110)),
+            ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     if (entry.state == "Completed") {
                         if (entry.item.x != null || entry.audioOutput != null) {
-                            IconButton(onClick = onOpenFile, modifier = Modifier.size(34.dp)) {
+                            SaltIconButton(onClick = onOpenFile, modifier = Modifier.size(34.dp)) {
                                 Icon(
                                     painter = painterResource(R.drawable.ic_play),
                                     contentDescription = if (entry.audioOutput != null) "播放音频" else "打开文件",
@@ -354,7 +367,7 @@ private fun CompactQueueCardContent(
                                 )
                             }
                         }
-                        IconButton(onClick = onShare, modifier = Modifier.size(34.dp)) {
+                        SaltIconButton(onClick = onShare, modifier = Modifier.size(34.dp)) {
                             Icon(
                                 painter = painterResource(R.drawable.ic_share),
                                 contentDescription = "分享",
@@ -364,29 +377,29 @@ private fun CompactQueueCardContent(
                         }
                     } else {
                         if (entry.state == "Failed" && entry.failureKind == "TrackChanged") {
-                            IconButton(onClick = onReparseTrackChanged, modifier = Modifier.size(34.dp)) {
+                            SaltIconButton(onClick = onReparseTrackChanged, modifier = Modifier.size(34.dp)) {
                                 Icon(painterResource(R.drawable.ic_refresh), contentDescription = "重新解析", modifier = Modifier.size(17.dp))
                             }
                         } else if (entry.state == "Failed" && entry.failureKind in listOf("XSession", "YoutubeSession")) {
-                            IconButton(onClick = onManageSession, modifier = Modifier.size(34.dp)) {
+                            SaltIconButton(onClick = onManageSession, modifier = Modifier.size(34.dp)) {
                                 Icon(painterResource(R.drawable.ic_account), contentDescription = "登录", modifier = Modifier.size(17.dp))
                             }
                         } else if (entry.state == "Failed" && AuthRecovery.needsLogin(entry.failureKind, sessionState)) {
-                            IconButton(onClick = onLogin, modifier = Modifier.size(34.dp)) {
+                            SaltIconButton(onClick = onLogin, modifier = Modifier.size(34.dp)) {
                                 Icon(painterResource(R.drawable.ic_account), contentDescription = "登录 B 站", modifier = Modifier.size(17.dp))
                             }
                         }
                         if (entry.state in listOf("Queued", "Downloading", "Merging")) {
-                            IconButton(onClick = onPause, modifier = Modifier.size(34.dp)) {
+                            SaltIconButton(onClick = onPause, modifier = Modifier.size(34.dp)) {
                                 Icon(painterResource(R.drawable.ic_pause), contentDescription = "暂停", modifier = Modifier.size(17.dp))
                             }
                         } else if (entry.state in listOf("Paused", "Failed")) {
-                            IconButton(onClick = onRetryTask, modifier = Modifier.size(34.dp)) {
+                            SaltIconButton(onClick = onRetryTask, modifier = Modifier.size(34.dp)) {
                                 Icon(painterResource(R.drawable.ic_refresh), contentDescription = "重试", modifier = Modifier.size(17.dp))
                             }
                         }
                     }
-                    IconButton(onClick = onRemove, modifier = Modifier.size(34.dp)) {
+                    SaltIconButton(onClick = onRemove, modifier = Modifier.size(34.dp)) {
                         Icon(
                             painter = painterResource(R.drawable.ic_delete),
                             contentDescription = "移除记录",
@@ -397,7 +410,11 @@ private fun CompactQueueCardContent(
                 }
             }
         }
-        if (entry.state != "Completed") {
+        androidx.compose.animation.AnimatedVisibility(
+            visible = entry.state != "Completed",
+            enter = expandVertically(spring(dampingRatio = 0.84f, stiffness = 440f)) + fadeIn(tween(160)),
+            exit = shrinkVertically(tween(150)) + fadeOut(tween(120)),
+        ) {
             LinearProgressIndicator(
                 progress = { animatedProgress },
                 modifier = Modifier
@@ -443,7 +460,11 @@ private fun StandardQueueCardContent(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            AnimatedVisibility(visible = completedOnly && selectionMode) {
+            AnimatedVisibility(
+                visible = completedOnly && selectionMode,
+                enter = expandHorizontally(spring(dampingRatio = 0.82f, stiffness = 460f)) + fadeIn(tween(150)),
+                exit = shrinkHorizontally(tween(140)) + fadeOut(tween(110)),
+            ) {
                 SaltCheckbox(checked = isSelected, onCheckedChange = { onToggleSelect() })
             }
             Cover(
@@ -495,25 +516,35 @@ private fun StandardQueueCardContent(
             }
         }
 
-        if (entry.state != "Completed") {
-            LinearProgressIndicator(
-                progress = { animatedProgress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(5.dp)
-                    .clip(RoundedCornerShape(3.dp)),
-                trackColor = saltColors().subCard,
-            )
-            Text(
-                text = statusMessage,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (entry.state == "Failed") saltColors().error else MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+        androidx.compose.animation.AnimatedVisibility(
+            visible = entry.state != "Completed",
+            enter = expandVertically(spring(dampingRatio = 0.84f, stiffness = 440f)) + fadeIn(tween(160)),
+            exit = shrinkVertically(tween(150)) + fadeOut(tween(120)),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LinearProgressIndicator(
+                    progress = { animatedProgress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(5.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                    trackColor = saltColors().subCard,
+                )
+                Text(
+                    text = statusMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (entry.state == "Failed") saltColors().error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
 
-        if (!(completedOnly && selectionMode)) {
+        androidx.compose.animation.AnimatedVisibility(
+            visible = !(completedOnly && selectionMode),
+            enter = expandVertically(spring(dampingRatio = 0.84f, stiffness = 440f)) + fadeIn(tween(160)),
+            exit = shrinkVertically(tween(150)) + fadeOut(tween(120)),
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -521,7 +552,7 @@ private fun StandardQueueCardContent(
             ) {
                 if (entry.state == "Completed") {
                     if (entry.item.x != null || entry.audioOutput != null) {
-                        FilledTonalButton(
+                        SaltTonalButton(
                             onClick = onOpenFile,
                             shape = RoundedCornerShape(9.dp),
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
@@ -532,7 +563,7 @@ private fun StandardQueueCardContent(
                             Text(if (entry.audioOutput != null) "播放" else "打开", style = MaterialTheme.typography.labelMedium)
                         }
                     }
-                    Button(
+                    SaltButton(
                         onClick = onShare,
                         shape = RoundedCornerShape(9.dp),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
@@ -545,7 +576,7 @@ private fun StandardQueueCardContent(
                     Spacer(Modifier.weight(1f))
                 } else {
                     if (entry.state == "Failed" && entry.failureKind == "TrackChanged") {
-                        FilledTonalButton(
+                        SaltTonalButton(
                             onClick = onReparseTrackChanged,
                             shape = RoundedCornerShape(9.dp),
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
@@ -555,7 +586,7 @@ private fun StandardQueueCardContent(
                         }
                     }
                     if (entry.state == "Failed" && entry.failureKind in listOf("XSession", "YoutubeSession")) {
-                        FilledTonalButton(
+                        SaltTonalButton(
                             onClick = onManageSession,
                             shape = RoundedCornerShape(9.dp),
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
@@ -565,7 +596,7 @@ private fun StandardQueueCardContent(
                         }
                     }
                     if (entry.state == "Failed" && AuthRecovery.needsLogin(entry.failureKind, sessionState)) {
-                        FilledTonalButton(
+                        SaltTonalButton(
                             onClick = onLogin,
                             shape = RoundedCornerShape(9.dp),
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
@@ -575,7 +606,7 @@ private fun StandardQueueCardContent(
                         }
                     }
                     if (entry.state in listOf("Paused", "Failed")) {
-                        FilledTonalButton(
+                        SaltTonalButton(
                             onClick = onRetryTask,
                             shape = RoundedCornerShape(9.dp),
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
@@ -587,7 +618,7 @@ private fun StandardQueueCardContent(
                         }
                     }
                     if (entry.state in listOf("Queued", "Downloading", "Merging")) {
-                        FilledTonalButton(
+                        SaltTonalButton(
                             onClick = onPause,
                             shape = RoundedCornerShape(9.dp),
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
@@ -599,7 +630,7 @@ private fun StandardQueueCardContent(
                         }
                     }
                     if (entry.state != "Canceled") {
-                        TextButton(
+                        SaltTextButton(
                             onClick = onCancel,
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                             modifier = Modifier.height(34.dp),
@@ -609,7 +640,7 @@ private fun StandardQueueCardContent(
                     }
                     Spacer(Modifier.weight(1f))
                 }
-                IconButton(onClick = onRemove, modifier = Modifier.size(34.dp)) {
+                SaltIconButton(onClick = onRemove, modifier = Modifier.size(34.dp)) {
                     Icon(
                         painter = painterResource(R.drawable.ic_delete),
                         contentDescription = "移除记录",
@@ -656,7 +687,11 @@ private fun ComfortableQueueCardContent(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.Top,
         ) {
-            AnimatedVisibility(visible = completedOnly && selectionMode) {
+            AnimatedVisibility(
+                visible = completedOnly && selectionMode,
+                enter = expandHorizontally(spring(dampingRatio = 0.82f, stiffness = 460f)) + fadeIn(tween(150)),
+                exit = shrinkHorizontally(tween(140)) + fadeOut(tween(110)),
+            ) {
                 SaltCheckbox(checked = isSelected, onCheckedChange = { onToggleSelect() })
             }
             Cover(
@@ -715,110 +750,122 @@ private fun ComfortableQueueCardContent(
             }
         }
 
-        if (entry.state != "Completed") {
-            LinearProgressIndicator(
-                progress = { animatedProgress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp)),
-                trackColor = saltColors().subCard,
-            )
-            Text(
-                text = statusMessage,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (entry.state == "Failed") saltColors().error else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        androidx.compose.animation.AnimatedVisibility(
+            visible = entry.state != "Completed",
+            enter = expandVertically(spring(dampingRatio = 0.84f, stiffness = 440f)) + fadeIn(tween(160)),
+            exit = shrinkVertically(tween(150)) + fadeOut(tween(120)),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                LinearProgressIndicator(
+                    progress = { animatedProgress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                    trackColor = saltColors().subCard,
+                )
+                Text(
+                    text = statusMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (entry.state == "Failed") saltColors().error else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
-        if (!(completedOnly && selectionMode)) {
-            SaltInsetDivider(Modifier.padding(horizontal = 0.dp))
+        androidx.compose.animation.AnimatedVisibility(
+            visible = !(completedOnly && selectionMode),
+            enter = expandVertically(spring(dampingRatio = 0.84f, stiffness = 440f)) + fadeIn(tween(160)),
+            exit = shrinkVertically(tween(150)) + fadeOut(tween(120)),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SaltInsetDivider(Modifier.padding(horizontal = 0.dp))
 
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                if (entry.state == "Completed") {
-                    if (entry.item.x != null || entry.audioOutput != null) {
-                        FilledTonalButton(
-                            onClick = onOpenFile,
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (entry.state == "Completed") {
+                        if (entry.item.x != null || entry.audioOutput != null) {
+                            SaltTonalButton(
+                                onClick = onOpenFile,
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                            ) {
+                                Icon(painterResource(R.drawable.ic_play), contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(if (entry.audioOutput != null) "播放音频" else "打开文件")
+                            }
+                        }
+                        SaltButton(
+                            onClick = onShare,
                             shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
                         ) {
-                            Icon(painterResource(R.drawable.ic_play), contentDescription = null, modifier = Modifier.size(15.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text(if (entry.audioOutput != null) "播放音频" else "打开文件")
+                            Icon(painterResource(R.drawable.ic_share), contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(if (entry.item.x != null) "分享文件" else if (entry.audioOutput == null) "分享视频" else "分享音频")
+                        }
+                    } else {
+                        if (entry.state == "Failed" && entry.failureKind == "TrackChanged") {
+                            SaltTonalButton(
+                                onClick = onReparseTrackChanged,
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            ) {
+                                Text(if (entry.item.x != null) "重新解析 X 帖子" else "重新选择音轨")
+                            }
+                        }
+                        if (entry.state == "Failed" && entry.failureKind in listOf("XSession", "YoutubeSession")) {
+                            SaltTonalButton(
+                                onClick = onManageSession,
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            ) {
+                                Text(if (entry.failureKind == "XSession") "登录 X" else "登录 YouTube")
+                            }
+                        }
+                        if (entry.state == "Failed" && AuthRecovery.needsLogin(entry.failureKind, sessionState)) {
+                            SaltTonalButton(
+                                onClick = onLogin,
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            ) {
+                                Text("登录 B 站")
+                            }
+                        }
+                        if (entry.state in listOf("Paused", "Failed")) {
+                            SaltTonalButton(
+                                onClick = onRetryTask,
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            ) {
+                                Icon(painterResource(R.drawable.ic_refresh), contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("继续 / 重试")
+                            }
+                        }
+                        if (entry.state in listOf("Queued", "Downloading", "Merging")) {
+                            SaltTonalButton(
+                                onClick = onPause,
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            ) {
+                                Icon(painterResource(R.drawable.ic_pause), contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("暂停")
+                            }
+                        }
+                        if (entry.state != "Canceled") {
+                            SaltTextButton(onClick = onCancel) { Text("取消") }
                         }
                     }
-                    Button(
-                        onClick = onShare,
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                    ) {
-                        Icon(painterResource(R.drawable.ic_share), contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(if (entry.item.x != null) "分享文件" else if (entry.audioOutput == null) "分享视频" else "分享音频")
-                    }
-                } else {
-                    if (entry.state == "Failed" && entry.failureKind == "TrackChanged") {
-                        FilledTonalButton(
-                            onClick = onReparseTrackChanged,
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        ) {
-                            Text(if (entry.item.x != null) "重新解析 X 帖子" else "重新选择音轨")
-                        }
-                    }
-                    if (entry.state == "Failed" && entry.failureKind in listOf("XSession", "YoutubeSession")) {
-                        FilledTonalButton(
-                            onClick = onManageSession,
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        ) {
-                            Text(if (entry.failureKind == "XSession") "登录 X" else "登录 YouTube")
-                        }
-                    }
-                    if (entry.state == "Failed" && AuthRecovery.needsLogin(entry.failureKind, sessionState)) {
-                        FilledTonalButton(
-                            onClick = onLogin,
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        ) {
-                            Text("登录 B 站")
-                        }
-                    }
-                    if (entry.state in listOf("Paused", "Failed")) {
-                        FilledTonalButton(
-                            onClick = onRetryTask,
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        ) {
-                            Icon(painterResource(R.drawable.ic_refresh), contentDescription = null, modifier = Modifier.size(15.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("继续 / 重试")
-                        }
-                    }
-                    if (entry.state in listOf("Queued", "Downloading", "Merging")) {
-                        FilledTonalButton(
-                            onClick = onPause,
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        ) {
-                            Icon(painterResource(R.drawable.ic_pause), contentDescription = null, modifier = Modifier.size(15.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("暂停")
-                        }
-                    }
-                    if (entry.state != "Canceled") {
-                        TextButton(onClick = onCancel) { Text("取消") }
-                    }
-                }
 
-                TextButton(onClick = onRemove) {
-                    Icon(painterResource(R.drawable.ic_delete), contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("移除记录")
+                    SaltTextButton(onClick = onRemove) {
+                        Icon(painterResource(R.drawable.ic_delete), contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("移除记录")
+                    }
                 }
             }
         }

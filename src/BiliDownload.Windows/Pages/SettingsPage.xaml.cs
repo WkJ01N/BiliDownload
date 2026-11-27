@@ -9,7 +9,10 @@ namespace BiliDownload_Windows.Pages;
 public sealed partial class SettingsPage : Page
 {
     private CancellationTokenSource? componentDownload;
+    private CancellationTokenSource? noticeCts;
     private string selectedAccent = "Pink";
+    private string selectedTheme = "Default";
+    private string selectedDensity = "Standard";
     private bool initialized;
     public sealed record NamingVariable(string Label, string Token);
 
@@ -26,14 +29,17 @@ public sealed partial class SettingsPage : Page
         FfmpegBox.Text = settings.FfmpegPath;
         DetectSwitch.IsOn = settings.DetectOnActivate;
         MonitorSwitch.IsOn = settings.MonitorClipboard;
-        ThemeBox.SelectedValue = settings.Theme;
-        DensityBox.SelectedValue = settings.EffectiveListDensity;
+        selectedTheme = settings.Theme;
+        selectedDensity = settings.EffectiveListDensity;
         AutoDownloadSwitch.IsOn = settings.AutoDownloadOnNotificationClick;
         ExpandRelatedSwitch.IsOn = settings.ExpandRelatedItems;
 
         selectedAccent = ThemeAccentHelper.Resolve(settings.AccentColor).Key;
         SyncAccentSwatches();
+        UpdateThemeSegment(animate: false);
+        UpdateDensitySegment(animate: false);
         UpdateNamingPreview();
+        UiMotion.BindNoticeHost(NoticeHost, Notice, NoticeProgress, () => { noticeCts?.Cancel(); noticeCts?.Dispose(); noticeCts = null; });
 
         App.Services.Notifications.RefreshStatus();
         NotificationStatus.Text = App.Services.Notifications.Status;
@@ -44,7 +50,7 @@ public sealed partial class SettingsPage : Page
         RefreshYoutubeAccount();
 
         initialized = true;
-        Unloaded += (_, _) => componentDownload?.Cancel();
+        Unloaded += (_, _) => { componentDownload?.Cancel(); noticeCts?.Cancel(); };
         Loaded += async (_, _) => await RefreshAccountAsync();
     }
 
@@ -69,28 +75,62 @@ public sealed partial class SettingsPage : Page
 
     private void AccentSwatch_Click(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.Tag is not string key) return;
+        if (sender is not Button btn || btn.Tag is not string key) return;
         selectedAccent = ThemeAccentHelper.Resolve(key).Key;
         SyncAccentSwatches();
+        UiMotion.AnimateScalePulse(btn);
         App.Main.PreviewAccent(selectedAccent);
     }
 
-    private void ThemeBox_Changed(object sender, SelectionChangedEventArgs e)
+    private void ThemeSegment_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateThemeSegment(animate: false);
+    private void DensitySegment_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateDensitySegment(animate: false);
+
+    private void ThemeSegment_Click(object sender, RoutedEventArgs e)
     {
-        if (!initialized) return;
-        if (ThemeBox.SelectedValue is string themeKey) App.Main.PreviewTheme(themeKey);
+        if (sender is not FrameworkElement el || el.Tag is not string themeKey) return;
+        selectedTheme = themeKey;
+        UpdateThemeSegment(animate: true);
+        if (initialized) App.Main.PreviewTheme(themeKey);
     }
 
-    private void DensityBox_Changed(object sender, SelectionChangedEventArgs e)
+    private void DensitySegment_Click(object sender, RoutedEventArgs e)
     {
+        if (sender is not FrameworkElement el || el.Tag is not string density) return;
+        selectedDensity = AppSettings.NormalizeListDensity(density);
+        UpdateDensitySegment(animate: true);
         if (!initialized) return;
-        if (DensityBox.SelectedValue is string density)
+        try
         {
-            try
-            {
-                App.Services.SaveSettings(App.Services.Settings with { ListDensity = AppSettings.NormalizeListDensity(density) });
-            }
-            catch { }
+            App.Services.SaveSettings(App.Services.Settings with { ListDensity = selectedDensity });
+        }
+        catch { }
+    }
+
+    private void UpdateThemeSegment(bool animate)
+    {
+        var buttons = new[] { ThemeBtnDefault, ThemeBtnLight, ThemeBtnDark };
+        var idx = selectedTheme switch { "Light" => 1, "Dark" => 2, _ => 0 };
+        ApplySegmentVisuals(ThemeSegment, ThemePill, buttons, idx, animate);
+    }
+
+    private void UpdateDensitySegment(bool animate)
+    {
+        var buttons = new[] { DensityBtnCompact, DensityBtnStandard, DensityBtnComfortable };
+        var idx = selectedDensity switch { "Compact" => 0, "Comfortable" => 2, _ => 1 };
+        ApplySegmentVisuals(DensitySegment, DensityPill, buttons, idx, animate);
+    }
+
+    private static void ApplySegmentVisuals(Border container, Border pill, Button[] buttons, int selectedIdx, bool animate)
+    {
+        var innerWidth = container.ActualWidth - container.Padding.Left - container.Padding.Right;
+        if (innerWidth > 12)
+        {
+            var pillWidth = (innerWidth - 4.0) / buttons.Length;
+            UiMotion.AnimateSlidePill(pill, selectedIdx * (pillWidth + 2.0), pillWidth, animate);
+        }
+        for (var i = 0; i < buttons.Length; i++)
+        {
+            buttons[i].FontWeight = i == selectedIdx ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal;
         }
     }
 
@@ -310,14 +350,14 @@ public sealed partial class SettingsPage : Page
                 FfmpegPath = FfmpegBox.Text.Trim(),
                 DetectOnActivate = DetectSwitch.IsOn,
                 MonitorClipboard = MonitorSwitch.IsOn,
-                Theme = ThemeBox.SelectedValue as string ?? "Default",
+                Theme = selectedTheme,
                 AutoDownloadOnNotificationClick = AutoDownloadSwitch.IsOn,
                 ExpandRelatedItems = ExpandRelatedSwitch.IsOn,
                 FileNameTemplate = NamingTemplate.Text,
                 XSortByType = XLayout.SelectedIndex == 1,
                 CloseBehavior = CloseBehaviorBox.SelectedValue as string ?? "Ask",
                 AccentColor = selectedAccent,
-                ListDensity = AppSettings.NormalizeListDensity(DensityBox.SelectedValue as string),
+                ListDensity = AppSettings.NormalizeListDensity(selectedDensity),
             });
             RefreshComponents(); App.Main.ApplyTheme(); Show("设置已保存", InfoBarSeverity.Success);
         }
@@ -339,5 +379,6 @@ public sealed partial class SettingsPage : Page
     }
 
     private void ResetNaming_Click(object sender, RoutedEventArgs e) => NamingTemplate.Text = FileNaming.DefaultTemplate;
-    private void Show(string text, InfoBarSeverity severity) { Notice.Message = text; Notice.Severity = severity; Notice.IsOpen = true; }
+    private void Show(string text, InfoBarSeverity severity) =>
+        UiMotion.ShowAnimatedNotice(NoticeHost, Notice, NoticeProgress, text, severity, hasActions: false, noticeCts, c => noticeCts = c);
 }

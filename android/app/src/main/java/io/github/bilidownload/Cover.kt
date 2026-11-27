@@ -2,6 +2,7 @@ package io.github.bilidownload
 
 import android.graphics.BitmapFactory
 import android.util.LruCache
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -34,6 +35,10 @@ import java.net.URI
 
 private object CoverCache {
     val memory = LruCache<String, ImageBitmap>(32)
+}
+
+internal object CoverBackdropSignal {
+    var version by mutableIntStateOf(0)
 }
 
 private enum class CoverStatus { Loading, Loaded, Empty }
@@ -93,6 +98,7 @@ fun Cover(
             CoverCache.memory.put(url, loaded)
             bitmap = loaded
             status = CoverStatus.Loaded
+            CoverBackdropSignal.version++
         } else {
             status = CoverStatus.Empty
         }
@@ -106,36 +112,47 @@ fun Cover(
             .background(salt.subCard),
         contentAlignment = Alignment.Center,
     ) {
-        when (status) {
-            CoverStatus.Loaded -> bitmap?.let {
-                Image(
-                    bitmap = it,
-                    contentDescription = "视频封面",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                )
-            }
-            CoverStatus.Loading -> {
-                val transition = rememberInfiniteTransition(label = "coverSkeleton")
-                val alpha by transition.animateFloat(
-                    initialValue = 0.25f,
-                    targetValue = 0.55f,
-                    animationSpec = infiniteRepeatable(tween(750), RepeatMode.Reverse),
-                    label = "skeletonAlpha",
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = alpha)),
-                )
-            }
-            CoverStatus.Empty -> {
-                Icon(
-                    painter = painterResource(R.drawable.ic_video_placeholder),
-                    contentDescription = null,
-                    modifier = Modifier.size(26.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                )
+        Crossfade(
+            targetState = status,
+            animationSpec = tween(220),
+            label = "coverCrossfade",
+        ) { currentStatus ->
+            when (currentStatus) {
+                CoverStatus.Loaded -> bitmap?.let {
+                    Image(
+                        bitmap = it,
+                        contentDescription = "视频封面",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                }
+                CoverStatus.Loading -> {
+                    val transition = rememberInfiniteTransition(label = "coverSkeleton")
+                    val alpha by transition.animateFloat(
+                        initialValue = 0.25f,
+                        targetValue = 0.55f,
+                        animationSpec = infiniteRepeatable(tween(750), RepeatMode.Reverse),
+                        label = "skeletonAlpha",
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = alpha)),
+                    )
+                }
+                CoverStatus.Empty -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_video_placeholder),
+                            contentDescription = null,
+                            modifier = Modifier.size(26.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        )
+                    }
+                }
             }
         }
     }

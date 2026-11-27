@@ -1,6 +1,14 @@
 package io.github.bilidownload.ui.screens
 
 import android.os.Bundle
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,6 +19,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -107,7 +116,7 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Button(
+                        SaltButton(
                             enabled = !loading,
                             onClick = onParse,
                             shape = RoundedCornerShape(12.dp),
@@ -126,7 +135,7 @@ fun HomeScreen(
                             }
                         }
 
-                        FilledTonalButton(
+                        SaltTonalButton(
                             onClick = onPaste,
                             shape = RoundedCornerShape(12.dp),
                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
@@ -146,7 +155,7 @@ fun HomeScreen(
 
         if (media.isEmpty()) {
             item {
-                SaltCard {
+                SaltCard(modifier = Modifier.animateItem()) {
                     Column(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -164,7 +173,7 @@ fun HomeScreen(
 
         if (media.isNotEmpty()) {
             item {
-                SaltCard {
+                SaltCard(modifier = Modifier.animateItem()) {
                     Column(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -182,8 +191,8 @@ fun HomeScreen(
                                 SaltStatusBadge(text = "找到 ${media.size} 项", tone = BadgeTone.Accent)
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                TextButton(onClick = onSelectAll) { Text("全选") }
-                                TextButton(onClick = onSelectNone) { Text("取消") }
+                                SaltTextButton(onClick = onSelectAll) { Text("全选") }
+                                SaltTextButton(onClick = onSelectNone) { Text("取消") }
                             }
                         }
 
@@ -206,8 +215,13 @@ fun HomeScreen(
                                 }
                             }
                             if (variants.isNotEmpty() && media.any(videoMode)) {
+                                val qualityArrowRotation by animateFloatAsState(
+                                    targetValue = if (qualityOpen) 270f else 90f,
+                                    animationSpec = spring(dampingRatio = 0.72f, stiffness = 480f),
+                                    label = "qualityArrow",
+                                )
                                 Box {
-                                    OutlinedButton(
+                                    SaltOutlinedButton(
                                         border = BorderStroke(1.dp, saltColors().subtleBorder),
                                         shape = RoundedCornerShape(10.dp),
                                         colors = ButtonDefaults.outlinedButtonColors(containerColor = saltColors().subCard),
@@ -217,6 +231,15 @@ fun HomeScreen(
                                         Text(
                                             text = "画质上限：${sizeLimit?.label.orEmpty()}",
                                             style = MaterialTheme.typography.labelLarge,
+                                        )
+                                        Spacer(Modifier.width(4.dp))
+                                        Icon(
+                                            painter = painterResource(R.drawable.ic_chevron_right),
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .size(14.dp)
+                                                .rotate(qualityArrowRotation),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
                                     DropdownMenu(expanded = qualityOpen, onDismissRequest = { qualityOpen = false }) {
@@ -251,7 +274,7 @@ fun HomeScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
 
-                        Button(
+                        SaltButton(
                             enabled = canDownload,
                             onClick = onDownloadSelected,
                             modifier = Modifier.fillMaxWidth(),
@@ -296,6 +319,7 @@ fun HomeScreen(
                 }
 
                 SaltCard(
+                    modifier = Modifier.animateItem(),
                     highlighted = isSelected,
                     onClick = if (enabled) ({ onToggleItem(item.id, !isSelected) }) else null,
                 ) {
@@ -352,49 +376,73 @@ fun HomeScreen(
                                 if (item.x?.available == false) {
                                     SaltStatusBadge("没有可下载的 MP4 格式", BadgeTone.Warning)
                                 }
-                                if (item.x?.kind == "gif" && isSelected) {
+                                androidx.compose.animation.AnimatedVisibility(
+                                    visible = item.x?.kind == "gif" && isSelected,
+                                    enter = expandVertically(spring(dampingRatio = 0.82f, stiffness = 440f)) + fadeIn(tween(180)),
+                                    exit = shrinkVertically(tween(160)) + fadeOut(tween(130)),
+                                ) {
                                     ChoiceMenu("动图格式", listOf("MP4", "GIF"), if (item.id in gifIds) 1 else 0) { option ->
                                         onToggleGif(item.id, option == 1)
                                     }
                                 }
-                                if (item.x?.document != null && isSelected) {
-                                    Surface(
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = saltColors().subCard,
-                                    ) {
-                                        Column(
-                                            modifier = Modifier.fillMaxWidth().padding(10.dp),
-                                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                                val doc = item.x?.document
+                                androidx.compose.animation.AnimatedVisibility(
+                                    visible = doc != null && isSelected,
+                                    enter = expandVertically(spring(dampingRatio = 0.82f, stiffness = 440f)) + fadeIn(tween(180)),
+                                    exit = shrinkVertically(tween(160)) + fadeOut(tween(130)),
+                                ) {
+                                    if (doc != null) {
+                                        Surface(
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = saltColors().subCard,
                                         ) {
-                                            Text(
-                                                text = item.x.document.text,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                maxLines = 4,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
-                                            if (item.x.document.truncated) {
+                                            Column(
+                                                modifier = Modifier.fillMaxWidth().padding(10.dp),
+                                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                                            ) {
                                                 Text(
-                                                    text = "正文可能不完整",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    text = doc.text,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    maxLines = 4,
+                                                    overflow = TextOverflow.Ellipsis,
                                                 )
+                                                if (doc.truncated) {
+                                                    Text(
+                                                        text = "正文可能不完整",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    )
+                                                }
                                             }
                                         }
                                     }
                                 }
-                                if (isSelected && audioMode(item)) {
-                                    val tracks = audioCache[item.id].orEmpty()
-                                    if (tracks.isNotEmpty()) {
-                                        ChoiceMenu(
-                                            "音质",
-                                            listOf("自动最高") + tracks.map { it.label },
-                                            tracks.indexOfFirst { it.id == trackIds.getString(item.id) } + 1,
-                                        ) { index ->
-                                            onSelectTrack(item.id, if (index == 0) null else tracks[index - 1].id)
+                                val isAudioSelected = isSelected && audioMode(item)
+                                val isVideoSelected = isSelected && !audioMode(item) && videoMode(item)
+                                androidx.compose.animation.AnimatedVisibility(
+                                    visible = isAudioSelected,
+                                    enter = expandVertically(spring(dampingRatio = 0.82f, stiffness = 440f)) + fadeIn(tween(180)),
+                                    exit = shrinkVertically(tween(160)) + fadeOut(tween(130)),
+                                ) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        val tracks = audioCache[item.id].orEmpty()
+                                        if (tracks.isNotEmpty()) {
+                                            ChoiceMenu(
+                                                "音质",
+                                                listOf("自动最高") + tracks.map { it.label },
+                                                tracks.indexOfFirst { it.id == trackIds.getString(item.id) } + 1,
+                                            ) { index ->
+                                                onSelectTrack(item.id, if (index == 0) null else tracks[index - 1].id)
+                                            }
                                         }
+                                        outputFor(item)?.let { SaltStatusBadge(it.summary, BadgeTone.Info) }
                                     }
-                                    outputFor(item)?.let { SaltStatusBadge(it.summary, BadgeTone.Info) }
-                                } else if (isSelected && videoMode(item)) {
+                                }
+                                androidx.compose.animation.AnimatedVisibility(
+                                    visible = isVideoSelected,
+                                    enter = expandVertically(spring(dampingRatio = 0.82f, stiffness = 440f)) + fadeIn(tween(180)),
+                                    exit = shrinkVertically(tween(160)) + fadeOut(tween(130)),
+                                ) {
                                     val sizeLabel = if (sizeLoading) {
                                         "正在估算…"
                                     } else {
@@ -417,7 +465,7 @@ fun HomeScreen(
                                         overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.weight(1f),
                                     )
-                                    TextButton(
+                                    SaltTextButton(
                                         onClick = { onRenameItem(item, renderedName.substringBeforeLast('.')) },
                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                     ) {
@@ -438,10 +486,10 @@ fun HomeScreen(
 
             if (hasMorePages) {
                 item {
-                    FilledTonalButton(
+                    SaltTonalButton(
                         enabled = !loading,
                         onClick = onLoadMore,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().animateItem(),
                         shape = RoundedCornerShape(12.dp),
                     ) {
                         Text(if (loading) "加载中…" else "加载更多视频")
