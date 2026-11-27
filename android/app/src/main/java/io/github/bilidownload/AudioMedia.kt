@@ -54,9 +54,9 @@ object AudioMedia {
             StreamPart("audio-$cid-$key-$index", row.getString("url"), row.optJSONArray("backup_url").strings())
         })
     }
-    fun youtube(info: JSONObject): List<AudioTrack> {
+    fun youtube(info: JSONObject, key: String = "variants"): List<AudioTrack> {
         val tags = MusicTags(info.optString("trackTitle").ifBlank { info.optString("title") }, info.optString("artist"), info.optString("album"), info.optString("cover"))
-        return info.getJSONArray("variants").objects().map { row -> AudioTrack(row.getString("format"), row.getString("codec"),
+        return info.optJSONArray(key).objects().map { row -> AudioTrack(row.getString("format"), row.getString("codec"),
             row.optInt("bitrate"), row.optString("language"), row.optInt("channels"), row.optDouble("duration", 0.0),
             row.getBoolean("mixed"), row.optLong("bytes").takeIf { it > 0 }, row.optLong("audioBytes").takeIf { it > 0 }, tags, row.optString("container"), row.optBoolean("drc")) }
     }

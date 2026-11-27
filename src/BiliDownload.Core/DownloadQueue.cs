@@ -250,10 +250,12 @@ public sealed class DownloadQueue : IAsyncDisposable
         }
         catch (OperationCanceledException) when (shutdown.IsCancellationRequested) { }
     }
-    public async Task RemoveAsync(Guid id) {
+    public Task RemoveAsync(Guid id) => RemoveAsync(id, false);
+    public async Task RemoveAsync(Guid id, bool deleteFile) {
         SemaphoreSlim execution;
+        DownloadTaskData? removed;
         lock (sync) {
-            if (!tasks.Remove(id)) return;
+            if (!tasks.Remove(id, out removed)) return;
             waitingForAttachments.Remove(id); WakeDocuments(id);
             ++revisions[id];
             if (running.Remove(id, out var token)) token.Cancel();
@@ -265,6 +267,14 @@ public sealed class DownloadQueue : IAsyncDisposable
             await store.DeleteAsync(id);
             var directory = Path.Combine(cache, id.ToString("N"));
             if (Directory.Exists(directory)) try { Directory.Delete(directory, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            if (deleteFile && removed?.State == DownloadState.Completed && !string.IsNullOrWhiteSpace(removed.FilePath) && File.Exists(removed.FilePath))
+            {
+                try { File.Delete(removed.FilePath); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    throw new BiliException("任务记录已移除，但本地文件正在使用或无权删除。");
+                }
+            }
         } finally { execution.Release(); }
     }
     public async ValueTask DisposeAsync()

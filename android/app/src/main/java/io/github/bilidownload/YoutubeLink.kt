@@ -32,6 +32,54 @@ data class YoutubeLink(val video: String?, val playlist: String?, val music: Boo
 
 object YoutubeCookies {
     const val MAX_BYTES = 128 * 1024
+    private val YOUTUBE_AUTH_KEYS = setOf("SID", "SAPISID", "__Secure-1PSID", "__Secure-3PSID", "__Secure-3PAPISID")
+
+    fun hasAuthCookies(cookieHeaders: Collection<String>, x: Boolean): Boolean {
+        for (header in cookieHeaders) {
+            for (part in header.split(';')) {
+                val eq = part.indexOf('=')
+                if (eq <= 0) continue
+                val name = part.substring(0, eq).trim()
+                val value = part.substring(eq + 1).trim()
+                if (value.isEmpty()) continue
+                if (x && name == "auth_token") return true
+                if (!x && name in YOUTUBE_AUTH_KEYS) return true
+            }
+        }
+        return false
+    }
+
+    fun fromWebViewCookies(
+        domainHeaders: List<Pair<String, String>>,
+        x: Boolean,
+        now: Long = System.currentTimeMillis() / 1000,
+    ): String {
+        val merged = linkedMapOf<Pair<String, String>, String>()
+        for ((domain, header) in domainHeaders) {
+            val cleanDomain = domain.trim().trimStart('.').lowercase()
+            if (cleanDomain.isEmpty()) continue
+            for (part in header.split(';')) {
+                val eq = part.indexOf('=')
+                if (eq <= 0) continue
+                val name = part.substring(0, eq).trim()
+                val value = part.substring(eq + 1).trim()
+                if (name.isEmpty() || value.isEmpty() || name.any(Char::isISOControl) || value.any(Char::isISOControl)) continue
+                merged[cleanDomain to name] = value
+            }
+        }
+        if (!hasAuthCookies(domainHeaders.map { it.second }, x)) {
+            throw BiliException(
+                if (x) "尚未检测到 X 登录状态，请先完成网页登录。" else "尚未检测到 YouTube 登录状态，请先完成网页登录。",
+                if (x) BiliErrorKind.XSession else BiliErrorKind.YoutubeSession,
+            )
+        }
+        val raw = merged.entries.joinToString("\n") { (key, value) ->
+            val (host, name) = key
+            ".$host\tTRUE\t/\tTRUE\t0\t$name\t$value"
+        }
+        return filter(raw, now, x)
+    }
+
     fun filter(text: String, now: Long = System.currentTimeMillis() / 1000, x: Boolean = false): String {
         val domains = if(x) listOf("twitter.com", "x.com") else listOf("youtube.com")
         val rows = text.lineSequence().mapNotNull { line ->

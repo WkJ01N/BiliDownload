@@ -17,7 +17,15 @@ public record DownloadTaskData(Guid Id, MediaItem Item, int Quality, string Dire
     string? FilePath = null, DateTimeOffset CreatedAt = default, BiliErrorKind? FailureKind = null, string? OutputFileName = null, string? FinalFileName = null, string? FormatId = null, AudioOutput? AudioOutput = null);
 public record AppSettings(string DownloadDirectory, string FfmpegPath = "ffmpeg",
     bool DetectOnActivate = false, bool MonitorClipboard = true, string Theme = "Default",
-    bool AutoDownloadOnNotificationClick = true, bool ExpandRelatedItems = false, int ClipboardBehaviorVersion = 0, string FileNameTemplate = "{name}", string CloseBehavior = "Ask", bool XSortByType = false);
+    bool AutoDownloadOnNotificationClick = true, bool ExpandRelatedItems = false, int ClipboardBehaviorVersion = 0, string FileNameTemplate = "{name}", string CloseBehavior = "Ask", bool XSortByType = false, string AccentColor = "Pink", string ListDensity = "Standard")
+{
+    public string EffectiveListDensity => NormalizeListDensity(ListDensity);
+    public static string NormalizeListDensity(string? value) => value switch
+    {
+        "Compact" or "Standard" or "Comfortable" => value,
+        _ => "Standard"
+    };
+}
 public enum BiliErrorKind { Unknown, LoginRequired, RequestRestricted, YoutubeSession, YoutubeComponent, AudioComponent, TrackChanged, XSession, XComponent, NoAudio }
 public enum SessionState { Guest, Saved, Authenticated, Expired }
 public enum LoginOutcome { Success, Canceled, Failed }

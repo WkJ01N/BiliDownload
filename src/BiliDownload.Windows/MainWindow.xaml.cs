@@ -1,8 +1,12 @@
 using BiliDownload.Core;
 using BiliDownload_Windows.Pages;
 using BiliDownload_Windows.Services;
+using Microsoft.UI;
+using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Windows.ApplicationModel.DataTransfer;
 
 namespace BiliDownload_Windows;
@@ -22,16 +26,56 @@ public sealed partial class MainWindow : Window
     public bool IsExiting => exiting;
     private bool expectCommands;
     private string[] expectedLabels = [];
+    private readonly bool usingMica;
+    private int currentPageIndex;
+    private bool smokeMode;
+
+    private NavigationTransitionInfo SlideTransitionTo(int targetIndex)
+    {
+        if (smokeMode || targetIndex == currentPageIndex)
+        {
+            currentPageIndex = targetIndex;
+            return new SuppressNavigationTransitionInfo();
+        }
+        var effect = targetIndex > currentPageIndex ? SlideNavigationTransitionEffect.FromRight : SlideNavigationTransitionEffect.FromLeft;
+        currentPageIndex = targetIndex;
+        return new SlideNavigationTransitionInfo { Effect = effect };
+    }
+
+    private static int PageIndexForTag(string? tag) => tag switch
+    {
+        "home" => 0,
+        "queue" => 1,
+        "completed" => 2,
+        "settings" => 3,
+        _ => 0
+    };
+
     public MainWindow()
     {
-        InitializeComponent(); ExtendsContentIntoTitleBar = true; SetTitleBar(TitleRegion);
+        InitializeComponent();
+        ExtendsContentIntoTitleBar = true;
+        SetTitleBar(TitleRegion);
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1180, 820));
+
+        var isSmoke = Environment.GetCommandLineArgs().Any(a => a == "--smoke-test");
+        if (!isSmoke && MicaController.IsSupported())
+        {
+            SystemBackdrop = new MicaBackdrop();
+            usingMica = true;
+            Root.Background = new SolidColorBrush(Colors.Transparent);
+        }
+
         ApplyTheme();
         Root.ActualThemeChanged += (_, _) => ApplyTitleBarColors();
         Navigation.DisplayModeChanged += (_, _) => AdjustNavigationLayout();
         Root.Loaded += (_, _) => AdjustNavigationLayout();
-        if (ContentFrame.Content == null) ContentFrame.Navigate(typeof(HomePage));
+        if (ContentFrame.Content == null) ContentFrame.Navigate(typeof(HomePage), null, new SuppressNavigationTransitionInfo());
+
+        App.Services.Queue.Changed += UpdateBadges;
+        UpdateBadges();
+
         tray = new(WinRT.Interop.WindowNative.GetWindowHandle(this), RestoreWindow, () => _ = RequestExitAsync());
         lifetime = new(WinRT.Interop.WindowNative.GetWindowHandle(this), () => systemClosing = true,
             ending => { systemClosing = ending; if (ending) _ = RequestExitAsync(); });
@@ -72,26 +116,61 @@ public sealed partial class MainWindow : Window
         };
         try { watcher = new(WinRT.Interop.WindowNative.GetWindowHandle(this), () => { if (App.Services.Settings.MonitorClipboard) DispatcherQueue.TryEnqueue(async () => await CheckClipboardAsync()); }); }
         catch (InvalidOperationException) { ShowMessage("系统暂时无法监听剪贴板，仍可手动粘贴链接。"); }
-        Closed += (_, _) => { watcher?.Dispose(); tray?.Dispose(); lifetime?.Dispose(); };
+        Closed += (_, _) => { App.Services.Queue.Changed -= UpdateBadges; watcher?.Dispose(); tray?.Dispose(); lifetime?.Dispose(); };
         BehaviorNotice.IsOpen = App.Services.ClipboardMigrationNotice;
     }
+
+    private void UpdateBadges()
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            var tasks = App.Services.Queue.Snapshot();
+            var activeCount = tasks.Count(t => t.State is DownloadState.Queued or DownloadState.Downloading or DownloadState.Merging);
+            var completedCount = tasks.Count(t => t.State == DownloadState.Completed);
+
+            QueueBadge.Value = activeCount;
+            QueueBadge.Visibility = activeCount > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+            CompletedBadge.Value = completedCount;
+            CompletedBadge.Visibility = completedCount > 0 ? Visibility.Visible : Visibility.Collapsed;
+        });
+    }
+
     private void AdjustNavigationLayout() => ContentFrame.Margin = new Thickness(0, Navigation.DisplayMode == NavigationViewDisplayMode.Minimal ? 40 : 0, 0, 0);
-    public void ApplyTheme() {
+
+    public void ApplyTheme()
+    {
+        ThemeAccentHelper.ApplyAccent(App.Services.Settings.AccentColor);
         Root.RequestedTheme = App.Services.Settings.Theme switch { "Light" => ElementTheme.Light, "Dark" => ElementTheme.Dark, _ => ElementTheme.Default };
         ApplyTitleBarColors();
     }
-    private void ApplyTitleBarColors() {
+
+    public void PreviewAccent(string accentKey)
+    {
+        ThemeAccentHelper.ApplyAccent(accentKey);
+        ApplyTitleBarColors();
+    }
+
+    public void PreviewTheme(string themeKey)
+    {
+        Root.RequestedTheme = themeKey switch { "Light" => ElementTheme.Light, "Dark" => ElementTheme.Dark, _ => ElementTheme.Default };
+        ApplyTitleBarColors();
+    }
+
+    private void ApplyTitleBarColors()
+    {
         var dictionary = Application.Current.Resources.MergedDictionaries.First(d => d.Source?.OriginalString.EndsWith("RadixTheme.xaml") == true);
         var theme = (ResourceDictionary)dictionary.ThemeDictionaries[Root.ActualTheme == ElementTheme.Light ? "Light" : "Default"];
-        Windows.UI.Color Color(string key) => ((Microsoft.UI.Xaml.Media.SolidColorBrush)theme[key]).Color;
+        Windows.UI.Color Color(string key) => ((SolidColorBrush)theme[key]).Color;
         var bar = AppWindow.TitleBar;
         bar.ButtonForegroundColor = Color("TextFillColorPrimaryBrush");
         bar.ButtonInactiveForegroundColor = Color("TextFillColorSecondaryBrush");
-        bar.ButtonBackgroundColor = bar.ButtonInactiveBackgroundColor = Color("ApplicationPageBackgroundThemeBrush");
+        bar.ButtonBackgroundColor = bar.ButtonInactiveBackgroundColor = usingMica ? Colors.Transparent : Color("ApplicationPageBackgroundThemeBrush");
         bar.ButtonHoverBackgroundColor = Color("ControlFillColorSecondaryBrush");
         bar.ButtonPressedBackgroundColor = Color("ControlFillColorTertiaryBrush");
         bar.ButtonHoverForegroundColor = bar.ButtonPressedForegroundColor = Color("TextFillColorPrimaryBrush");
     }
+
     public void ExitApplication() => _ = RequestExitAsync();
     public async Task RequestExitAsync()
     {
@@ -101,32 +180,51 @@ public sealed partial class MainWindow : Window
         try { await App.Services.DisposeAsync(); }
         finally { tray?.Dispose(); tray = null; lifetime?.Dispose(); lifetime = null; App.ReleaseInstance(); allowClose = true; Close(); }
     }
+
     public void RestoreWindow()
     {
         AppWindow.Show();
         (AppWindow.Presenter as Microsoft.UI.Windowing.OverlappedPresenter)?.Restore();
         Activate(); SetForegroundWindow(WinRT.Interop.WindowNative.GetWindowHandle(this));
     }
+
+    public void OpenHome()
+    {
+        Navigation.SelectedItem = Navigation.MenuItems.OfType<NavigationViewItem>().First(i => i.Tag as string == "home");
+        if (currentPageIndex != 0 || ContentFrame.Content is not HomePage)
+            ContentFrame.Navigate(typeof(HomePage), "home", SlideTransitionTo(0));
+    }
+
     public void OpenXSettings() { OpenSettings(); (ContentFrame.Content as SettingsPage)?.SelectXAccount(); }
     public void OpenYoutubeSettings() { OpenSettings(); (ContentFrame.Content as SettingsPage)?.SelectYoutubeComponent(); }
-    public void OpenSettings() { Navigation.SelectedItem = Navigation.SettingsItem; ContentFrame.Navigate(typeof(SettingsPage)); }
+    public void OpenSettings()
+    {
+        Navigation.SelectedItem = Navigation.SettingsItem;
+        if (currentPageIndex != 3 || ContentFrame.Content is not SettingsPage)
+            ContentFrame.Navigate(typeof(SettingsPage), null, SlideTransitionTo(3));
+    }
     public void OpenAudioSettings() { OpenSettings(); (ContentFrame.Content as SettingsPage)?.SelectFullFfmpeg(); }
-    public async Task ReparseAsync(string url, bool audio) {
+    public async Task ReparseAsync(string url, bool audio)
+    {
         Navigation.SelectedItem = Navigation.MenuItems.OfType<NavigationViewItem>().First(i => i.Tag as string == "home");
-        if(ContentFrame.Content is not HomePage) ContentFrame.Navigate(typeof(HomePage));
+        if (ContentFrame.Content is not HomePage) ContentFrame.Navigate(typeof(HomePage), null, SlideTransitionTo(0));
         await ((HomePage)ContentFrame.Content).ReparseAsync(url, audio);
     }
+
     public void OpenQueue()
     {
         Navigation.SelectedItem = Navigation.MenuItems.OfType<NavigationViewItem>().First(i => i.Tag as string == "queue");
-        ContentFrame.Navigate(typeof(QueuePage), "queue");
+        if (currentPageIndex != 1 || ContentFrame.Content is not QueuePage)
+            ContentFrame.Navigate(typeof(QueuePage), "queue", SlideTransitionTo(1));
     }
+
     public void EnqueueActivation(ActivationRequest request)
     {
         if (exiting) return;
         if (request.Action == "exit") { _ = RequestExitAsync(); return; }
         activations.Enqueue(request); if (!processingActivation) _ = ProcessActivationsAsync();
     }
+
     private async Task ProcessActivationsAsync()
     {
         processingActivation = true;
@@ -142,24 +240,29 @@ public sealed partial class MainWindow : Window
                     if (request == null) { ShowMessage("此链接提示已处理或已超过 24 小时，请重新复制链接。"); continue; }
                     ClipboardNotice.IsOpen = false; pendingClipboard = null;
                     Navigation.SelectedItem = Navigation.MenuItems.OfType<NavigationViewItem>().First(i => i.Tag as string == "home");
-                    if (ContentFrame.Content is not HomePage) ContentFrame.Navigate(typeof(HomePage));
+                    if (ContentFrame.Content is not HomePage) ContentFrame.Navigate(typeof(HomePage), null, new EntranceNavigationTransitionInfo());
                     await ((HomePage)ContentFrame.Content).OpenClipboardAsync(request, activation.Action == "notification");
                 } catch (Exception) { ShowMessage("无法处理此通知，请重新复制链接，或手动粘贴后解析。"); }
             }
         } finally { processingActivation = false; }
     }
+
     public void ShowMessage(string message)
     {
         ClipboardNotice.Title = "提示"; ClipboardNotice.Message = message; ClipboardNotice.IsOpen = true;
         ViewClipboardButton.IsEnabled = pendingClipboard.HasValue;
     }
+
     private void DisableClipboard_Click(object sender, RoutedEventArgs e)
     {
         App.Services.SaveSettings(App.Services.Settings with { MonitorClipboard = false }); BehaviorNotice.IsOpen = false;
     }
+
     public void ConfigureSmoke(int width, string page, string state, string theme = "Default")
     {
+        smokeMode = true;
         Root.RequestedTheme = theme switch { "Light" => ElementTheme.Light, "Dark" => ElementTheme.Dark, _ => ElementTheme.Default };
+        ApplyTitleBarColors();
         var scale = Root.XamlRoot?.RasterizationScale ?? 1.5;
         AppWindow.Resize(new Windows.Graphics.SizeInt32((int)(width * scale), (int)(850 * scale)));
         if (page is "queue" or "completed")
@@ -174,11 +277,21 @@ public sealed partial class MainWindow : Window
             };
             expectedLabels = expectedLabels.Append("移除记录").ToArray();
             Navigation.SelectedItem = Navigation.MenuItems.OfType<NavigationViewItem>().First(i => i.Tag as string == page);
-            ContentFrame.Navigate(typeof(QueuePage), page);
+            ContentFrame.Navigate(typeof(QueuePage), page, new SuppressNavigationTransitionInfo());
             ((QueuePage)ContentFrame.Content).ShowSmokeState(Enum.Parse<BiliDownload.Core.DownloadState>(state));
         }
-        else if (page == "settings") { Navigation.SelectedItem = Navigation.SettingsItem; ContentFrame.Navigate(typeof(SettingsPage)); }
+        else if (page == "settings")
+        {
+            Navigation.SelectedItem = Navigation.SettingsItem;
+            ContentFrame.Navigate(typeof(SettingsPage), null, new SuppressNavigationTransitionInfo());
+        }
+        else if (page == "home")
+        {
+            Navigation.SelectedItem = Navigation.MenuItems.OfType<NavigationViewItem>().First(i => i.Tag as string == "home");
+            ContentFrame.Navigate(typeof(HomePage), null, new SuppressNavigationTransitionInfo());
+        }
     }
+
     public async Task<string> VerifyCommandsAsync()
     {
         static IEnumerable<DependencyObject> Descendants(DependencyObject root)
@@ -210,6 +323,7 @@ public sealed partial class MainWindow : Window
             }
         return string.Join("\n", details);
     }
+
     public async Task CaptureAsync(string path)
     {
         var bitmap = new Microsoft.UI.Xaml.Media.Imaging.RenderTargetBitmap();
@@ -224,13 +338,18 @@ public sealed partial class MainWindow : Window
         using var input = System.IO.WindowsRuntimeStreamExtensions.AsStreamForRead(stream);
         input.Position = 0; using var file = File.Create(path); await input.CopyToAsync(file);
     }
+
     private void Navigation_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
         if (ContentFrame == null) return;
-        if (args.IsSettingsSelected) ContentFrame.Navigate(typeof(SettingsPage));
+        if (args.IsSettingsSelected) ContentFrame.Navigate(typeof(SettingsPage), null, SlideTransitionTo(3));
         else if (args.SelectedItem is NavigationViewItem item)
-            ContentFrame.Navigate(item.Tag as string == "home" ? typeof(HomePage) : typeof(QueuePage), item.Tag as string);
+        {
+            var tag = item.Tag as string;
+            ContentFrame.Navigate(tag == "home" ? typeof(HomePage) : typeof(QueuePage), tag, SlideTransitionTo(PageIndexForTag(tag)));
+        }
     }
+
     public async Task CheckClipboardAsync()
     {
         var revision = ++clipboardRevision;
@@ -252,6 +371,7 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException or InvalidOperationException or IOException or UnauthorizedAccessException) { }
     }
+
     [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint window);
     private void ViewClipboard_Click(object sender, RoutedEventArgs e)
     {

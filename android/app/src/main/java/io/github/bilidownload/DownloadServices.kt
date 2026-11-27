@@ -29,9 +29,17 @@ object DownloadActions {
             .filter { it.extras.getString("entry") == id }.forEach { context.getSystemService(JobScheduler::class.java).cancel(it.id) }
         BiliApplication.engine.pause(id, canceled)
     }
-    suspend fun remove(context: Context, id: String) {
+    suspend fun remove(context: Context, id: String, deleteFile: Boolean = false): Boolean {
+        val entry = BiliApplication.store.get(id)
         pause(context, id, true)
         BiliApplication.store.delete(id)
+        if (!deleteFile || entry?.state != "Completed" || entry.uri.isNullOrBlank()) return true
+        val uri = android.net.Uri.parse(entry.uri)
+        val deletedViaResolver = runCatching { context.contentResolver.delete(uri, null, null) > 0 }.getOrDefault(false)
+        if (deletedViaResolver) return true
+        return runCatching {
+            androidx.documentfile.provider.DocumentFile.fromSingleUri(context, uri)?.delete() == true
+        }.getOrDefault(false)
     }
     fun notification(context: Context, entry: DownloadEntry): Notification {
         val open = PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)

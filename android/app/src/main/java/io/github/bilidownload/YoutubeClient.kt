@@ -83,7 +83,9 @@ class YoutubeClient(private val context: Context, val session: Session) {
         val v = source.variants.maxByOrNull { it.quality }
         if(source.audio && v != null) listOf(AudioTrack(requireNotNull(v.formatId),"AAC",0,"",0,source.duration,true,v.estimatedBytes,null,MusicTags(item.title,source.handle),container="mp4")) else emptyList()
     } else if(item.youtubeId == null) BiliApplication.api.previewAudio(item) else AudioMedia.youtube(inspect(item.youtubeId, item.music, true))
-    private fun choices(info: JSONObject) = info.getJSONArray("variants").objects().map {
+    suspend fun warmUp() = engine.warmUp()
+
+    private fun choices(info: JSONObject, key: String = "variants") = info.optJSONArray(key).objects().map {
         Variant(it.getInt("height"), "${it.getInt("height")}p", it.optLong("bytes").takeIf { bytes -> bytes > 0 }, it.getString("format"))
     }
     suspend fun variants(item: MediaItem) = item.x?.variants ?: if (item.youtubeId == null) BiliApplication.api.previewVariants(item) else choices(inspect(item.youtubeId, item.music, false))
@@ -107,7 +109,9 @@ class YoutubeClient(private val context: Context, val session: Session) {
             return clip.copy(items = first.items + clip.items, more = first.more)
         }
         val info = inspect(requireNotNull(link.video), link.music); val item = item(info, music = link.music)
-        return YoutubeCatalog(listOf(item), item.id, variants = if(link.music) null else choices(info), audio = if(link.music) AudioMedia.youtube(info) else null)
+        val videoChoices = (if (link.music) choices(info, "videoVariants") else choices(info, "variants")).takeIf { it.isNotEmpty() }
+        val audioChoices = (if (link.music) AudioMedia.youtube(info, "variants") else AudioMedia.youtube(info, "audioVariants")).takeIf { it.isNotEmpty() }
+        return YoutubeCatalog(listOf(item), item.id, variants = videoChoices, audio = audioChoices)
     }
     suspend fun fetch(entry: DownloadEntry, dir: File, progress: (Float) -> Unit): Pair<File, File?> = withContext(Dispatchers.IO) {
         require(dir.canonicalFile == engine.taskDirectory(entry.id).canonicalFile)

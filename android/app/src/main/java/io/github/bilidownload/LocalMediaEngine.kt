@@ -2,9 +2,13 @@ package io.github.bilidownload
 
 import android.content.Context
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.BufferedWriter
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
@@ -18,6 +22,15 @@ internal class LocalMediaEngine(
 ) {
     private val slots = Semaphore(3)
     private val nativeDir = File(context.applicationInfo.nativeLibraryDir)
+    private val ytDlpCacheDir = File(context.cacheDir, "yt-dlp-cache")
+    private val workerMutex = Mutex()
+    private val workerLock = Any()
+    private val workerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var workerProcess: Process? = null
+    private var workerArchive: File? = null
+    private var workerWriter: BufferedWriter? = null
+    private var workerReader: BufferedReader? = null
+    private var idleJob: Job? = null
 
     fun taskDirectory(id: String): File {
         require(UUID.fromString(id).toString() == id)
@@ -68,10 +81,167 @@ internal class LocalMediaEngine(
         ready
     }
 
+    private fun configureEnvironment(env: MutableMap<String, String>, home: File, diagnostics: File?) {
+        ytDlpCacheDir.mkdirs()
+        env["PYTHONHOME"] = home.path
+        env["LD_LIBRARY_PATH"] = File(home, "lib").path
+        env["SSL_CERT_FILE"] = File(home, "etc/tls/cert.pem").path
+        env["TMPDIR"] = context.cacheDir.path
+        env["HOME"] = context.noBackupFilesDir.path
+        env["YT_DLP_CACHE_DIR"] = ytDlpCacheDir.path
+        if (diagnostics != null) env["BILIDOWNLOAD_TEST_DIAGNOSTICS"] = "1"
+    }
+
+    private fun killWorker() {
+        val process: Process?
+        val writer: BufferedWriter?
+        val reader: BufferedReader?
+        synchronized(workerLock) {
+            idleJob?.cancel()
+            idleJob = null
+            process = workerProcess
+            writer = workerWriter
+            reader = workerReader
+            workerProcess = null
+            workerArchive = null
+            workerWriter = null
+            workerReader = null
+        }
+        runCatching { writer?.close() }
+        runCatching { reader?.close() }
+        if (process != null && process.isAlive) {
+            process.destroyForcibly()
+        }
+    }
+
+    private fun scheduleIdleShutdown() {
+        synchronized(workerLock) {
+            idleJob?.cancel()
+            idleJob = workerScope.launch {
+                delay(90_000L)
+                if (workerMutex.tryLock()) {
+                    try {
+                        killWorker()
+                    } finally {
+                        workerMutex.unlock()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun ensureWorker(archive: File, error: (String) -> BiliException): Pair<BufferedWriter, BufferedReader> {
+        synchronized(workerLock) {
+            idleJob?.cancel()
+            idleJob = null
+            val alive = workerProcess?.isAlive == true && workerArchive == archive && workerWriter != null && workerReader != null
+            if (alive) return workerWriter!! to workerReader!!
+        }
+        killWorker()
+        val runtime = prepareRuntime()
+        val home = File(runtime, "usr")
+        val builder = ProcessBuilder(
+            File(nativeDir, "libpython.so").path, "-B", "-s", "-X", "utf8",
+            File(runtime, "bridge.py").path, archive.absolutePath, File(nativeDir, "libqjs.so").path, "--worker",
+        )
+            .directory(context.cacheDir)
+            .redirectError(ProcessBuilder.Redirect.to(File("/dev/null")))
+        configureEnvironment(builder.environment(), home, null)
+        val process = builder.start()
+        val writer = process.outputStream.bufferedWriter(Charsets.UTF_8)
+        val reader = process.inputStream.bufferedReader(Charsets.UTF_8)
+        try {
+            val readyLine = reader.readLine() ?: throw error("Engine")
+            if (!JSONObject(readyLine).optBoolean("ready", false)) throw error("Engine")
+        } catch (e: BiliException) {
+            process.destroyForcibly()
+            throw e
+        } catch (_: Exception) {
+            process.destroyForcibly()
+            throw error("Engine")
+        }
+        synchronized(workerLock) {
+            workerProcess = process
+            workerArchive = archive
+            workerWriter = writer
+            workerReader = reader
+        }
+        return writer to reader
+    }
+
+    suspend fun warmUp() = withContext(Dispatchers.IO) {
+        runCatching {
+            if (!BiliApplication.components.state.value.ready) return@runCatching
+            val archive = requireArchive(false)
+            workerMutex.withLock {
+                currentCoroutineContext().ensureActive()
+                ensureWorker(archive) { BiliException("") }
+                scheduleIdleShutdown()
+            }
+        }
+        Unit
+    }
+
+    private suspend fun runWithWorker(
+        request: JSONObject,
+        archive: File,
+        error: (String) -> BiliException,
+    ): JSONObject = workerMutex.withLock {
+        currentCoroutineContext().ensureActive()
+        val (writer, reader) = ensureWorker(archive, error)
+        coroutineScope {
+            var completed = false
+            val cancellation = launch(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
+                try {
+                    awaitCancellation()
+                } finally {
+                    if (!completed) killWorker()
+                }
+            }
+            try {
+                ensureActive()
+                writer.write(request.toString())
+                writer.newLine()
+                writer.flush()
+                while (true) {
+                    ensureActive()
+                    val line = reader.readLine() ?: throw IOException("Worker EOF")
+                    val event = JSONObject(line)
+                    if (event.has("error")) {
+                        completed = true
+                        throw error(event.getString("error"))
+                    }
+                    event.optJSONObject("result")?.let {
+                        completed = true
+                        return@coroutineScope it
+                    }
+                }
+                @Suppress("UNREACHABLE_CODE")
+                throw error("Engine")
+            } catch (e: BiliException) {
+                throw e
+            } catch (e: CancellationException) {
+                killWorker()
+                throw e
+            } catch (_: Exception) {
+                killWorker()
+                currentCoroutineContext().ensureActive()
+                throw error("Engine")
+            } finally {
+                completed = true
+                cancellation.cancel()
+                scheduleIdleShutdown()
+            }
+        }
+    }
+
     suspend fun run(request: JSONObject, directory: File?, progress: (Float) -> Unit,
                     error: (String) -> BiliException): JSONObject = slots.withPermit {
         val x = request.optString("platform") == "x"
         val archive = requireArchive(x)
+        if (request.optString("op") != "fetch" && testDiagnostics == null) {
+            return@withPermit runWithWorker(request, archive, error)
+        }
         val diagnostics = testDiagnostics?.let { File.createTempFile("runtime-diagnostics-", ".log", context.cacheDir) }
         try {
             val runtime = prepareRuntime()
@@ -81,14 +251,7 @@ internal class LocalMediaEngine(
                 File(runtime, "bridge.py").path, archive.absolutePath, File(nativeDir, "libqjs.so").path)
                 .directory(directory ?: context.cacheDir)
                 .redirectError(ProcessBuilder.Redirect.to(diagnostics ?: File("/dev/null")))
-            builder.environment().apply {
-                put("PYTHONHOME", home.path)
-                put("LD_LIBRARY_PATH", File(home, "lib").path)
-                put("SSL_CERT_FILE", File(home, "etc/tls/cert.pem").path)
-                put("TMPDIR", context.cacheDir.path)
-                put("HOME", context.noBackupFilesDir.path)
-                if (diagnostics != null) put("BILIDOWNLOAD_TEST_DIAGNOSTICS", "1")
-            }
+            configureEnvironment(builder.environment(), home, diagnostics)
             val process = builder.start()
             try {
                 coroutineScope {

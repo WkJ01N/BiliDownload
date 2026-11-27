@@ -6,6 +6,7 @@ a classified error. Signed media URLs and account cookies stay in the process.
 import io
 import json
 import math
+import os
 import re
 import sys
 import time
@@ -216,7 +217,7 @@ def fetch_tracks(ydl, info, choices, request, work, report):
     return {"audio": audio_only or len(formats) == 2, "format": choice["format"], "height": choice.get("height", 0), "tags": entry(info)}
 
 
-def execute(request, qjs, work):
+def execute(request, qjs, work, state=None):
     if request.get("platform") == "x":
         # Isolated Windows Python omits the installed script directory from sys.path.
         script_dir = str(Path(__file__).resolve().parent)
@@ -237,14 +238,21 @@ def execute(request, qjs, work):
         url = url.replace("www.youtube.com", "music.youtube.com")
     audio_only = request.get("mode") == "audio"
     start = max(1, int(request.get("start", 1)))
-    opts = {"quiet": True, "no_warnings": True, "logger": QuietLogger(), "cachedir": False,
+    cache_dir = request.get("cacheDir") or os.environ.get("YT_DLP_CACHE_DIR") or False
+    opts = {"quiet": True, "no_warnings": True, "logger": QuietLogger(), "cachedir": cache_dir,
             "socket_timeout": 12, "retries": 2, "extractor_retries": 1, "fragment_retries": 2,
             "skip_unavailable_fragments": False, "fixup": "never", "hls_prefer_native": True,
             "js_runtimes": {"quickjs": {"path": qjs}}, "remote_components": set(),
             "extract_flat": "in_playlist", "playlist_items": f"{start}:{start + PAGE_SIZE}",
             "noplaylist": not listing}
     cookies = request.get("cookies")
-    for authenticated in ((True,) if audio_only and cookies else (False, True)):
+    cookie_key = hash(cookies) if cookies else None
+    if state is not None and state.get("cookie_key") != cookie_key:
+        state["cookie_key"] = cookie_key
+        state["prefer_auth"] = False
+    prefer_auth = bool(state and state.get("prefer_auth"))
+    attempts = (True,) if (audio_only or prefer_auth) and cookies else (False, True)
+    for authenticated in attempts:
         try:
             with ydl_module.YoutubeDL(opts) as ydl:
                 if authenticated:
@@ -259,8 +267,10 @@ def execute(request, qjs, work):
                 if info.get("live_status") in ("is_live", "is_upcoming"):
                     raise EngineError("Live")
                 choices = audio_choices(info) if audio_only else compatible(info)
-                if operation == "inspect" and not audio_only and not choices and audio_choices(info):
-                    return dict(entry(info), variants=[])
+                if operation == "inspect" and not audio_only and not choices:
+                    audio_list = audio_choices(info)
+                    if audio_list:
+                        return dict(entry(info), variants=[], audioVariants=[c for c, _ in audio_list])
                 if not choices:
                     if info.get("availability") in ("subscriber_only", "needs_auth", "private"):
                         raise EngineError("Membership" if authenticated else "SessionRequired")
@@ -268,26 +278,53 @@ def execute(request, qjs, work):
                         raise EngineError("Protected")
                     raise EngineError("NoAudio" if audio_only else "NoFormat")
                 if operation == "inspect":
-                    return dict(entry(info), variants=[choice for choice, _ in choices])
+                    extra = ({"videoVariants": [c for c, _ in compatible(info)]} if audio_only
+                             else {"audioVariants": [c for c, _ in audio_choices(info)]})
+                    return dict(entry(info), variants=[choice for choice, _ in choices], **extra)
                 return fetch_tracks(ydl, info, choices, request, work, emit)
         except Exception as exc:
             kind = str(exc) if isinstance(exc, EngineError) else classify(str(exc), authenticated)
             if authenticated and opts["logger"].invalid_session and kind in ("Membership", "SessionRequired", "VerifyAccount"):
                 kind = "SessionExpired"
             if kind in ("SessionRequired", "VerifyAccount") and cookies and not authenticated:
+                if state is not None:
+                    state["prefer_auth"] = True
                 continue
             raise EngineError(kind) from None
+
+
+def run_worker(qjs):
+    worker_state = {"cookie_key": None, "prefer_auth": False}
+    emit(ready=True)
+    while True:
+        raw = sys.stdin.buffer.readline(512 * 1024)
+        if not raw:
+            break
+        try:
+            request = json.loads(raw)
+            if request.get("op") == "shutdown":
+                break
+            emit(result=execute(request, qjs, Path.cwd(), worker_state))
+        except EngineError as error:
+            emit(error=str(error))
+        except Exception:
+            if os.environ.get("BILIDOWNLOAD_TEST_DIAGNOSTICS") == "1":
+                __import__("traceback").print_exc()
+            emit(error="Engine")
 
 
 if __name__ == "__main__":
     try:
         sys.path.insert(0, sys.argv[1])  # The pinned yt-dlp zipapp, including EJS.
         import yt_dlp as ydl_module
-        request = json.loads(sys.stdin.buffer.readline(512 * 1024))
-        emit(result=execute(request, sys.argv[2], Path.cwd()))
+        if len(sys.argv) >= 4 and sys.argv[3] == "--worker":
+            run_worker(sys.argv[2])
+        else:
+            request = json.loads(sys.stdin.buffer.readline(512 * 1024))
+            emit(result=execute(request, sys.argv[2], Path.cwd()))
     except EngineError as error:
         emit(error=str(error))
     except Exception:
-        if __import__("os").environ.get("BILIDOWNLOAD_TEST_DIAGNOSTICS") == "1":
+        if os.environ.get("BILIDOWNLOAD_TEST_DIAGNOSTICS") == "1":
             __import__("traceback").print_exc()
         emit(error="Engine")

@@ -6,6 +6,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -114,6 +115,7 @@ class MediaComponents(context: Context) {
 
     init {
         scope.launch {
+            delay(700L)
             synchronized(this@MediaComponents) {
                 if (download == null) {
                     val ready = checkArchive()

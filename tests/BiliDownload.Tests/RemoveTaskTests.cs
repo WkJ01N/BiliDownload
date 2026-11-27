@@ -22,6 +22,22 @@ public class RemoveTaskTests {
             Assert.Empty(store.Load());
         } finally { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); Directory.Delete(dir,true); }
     }
+    [Fact]
+    public async Task RemovalWithDeleteFileRemovesCompletedOutputFile() {
+        var dir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString()); Directory.CreateDirectory(dir);
+        try {
+            var output = Path.Combine(dir, "video.mp4"); await File.WriteAllTextAsync(output, "delete-me");
+            var store = new TaskStore(Path.Combine(dir, "data"));
+            var id = Guid.NewGuid();
+            await store.SaveAsync(new(id, new("video:2", "title", "part", "", MediaKind.Video, 1, "BV1xx411c7mD", 1, 0, 1, ""), 80, dir, DownloadState.Completed, FilePath: output));
+            await using (var queue = new DownloadQueue(new BlockedMedia(), store, Path.Combine(dir, "cache"), () => "missing-ffmpeg")) {
+                await queue.RemoveAsync(id, deleteFile: true);
+                Assert.Empty(queue.Snapshot());
+                Assert.False(File.Exists(output));
+            }
+            Assert.Empty(store.Load());
+        } finally { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); Directory.Delete(dir, true); }
+    }
     [Fact] public async Task RemovingQueuedWorkDoesNotKillWorkersOrResurrectTask() {
         var dir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         try {

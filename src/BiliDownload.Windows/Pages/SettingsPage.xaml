@@ -1,45 +1,420 @@
-<Page x:Class="BiliDownload_Windows.Pages.SettingsPage" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
- <ScrollViewer><StackPanel Padding="24,20" Spacing="20" MaxWidth="900" HorizontalAlignment="Stretch">
-  <TextBlock Text="设置" Style="{StaticResource TitleTextBlockStyle}"/>
-  <Border Background="Transparent" CornerRadius="0" Padding="0"><StackPanel Spacing="12"><TextBlock Text="B 站账号" Style="{StaticResource SubtitleTextBlockStyle}"/><TextBlock x:Name="AccountStatus" Text="未登录" TextWrapping="Wrap"/><StackPanel Orientation="Horizontal" Spacing="10"><Button x:Name="AccountLoginButton" Content="扫码登录" Click="Login_Click"/><Button x:Name="AccountLogoutButton" Visibility="Collapsed" Content="退出登录" Click="Logout_Click"/></StackPanel></StackPanel></Border>
-  <StackPanel Spacing="8"><TextBlock Text="YouTube 会话" Style="{StaticResource SubtitleTextBlockStyle}"/><TextBlock x:Name="YoutubeStatus"/><StackPanel Orientation="Horizontal" Spacing="8"><Button x:Name="YoutubeImport" Content="导入 cookies.txt" Click="YoutubeImport_Click"/><Button x:Name="YoutubeRemove" Content="移除会话" Click="YoutubeRemove_Click"/></StackPanel></StackPanel>
-  <StackPanel Spacing="8"><TextBlock Text="X 会话" Style="{StaticResource SubtitleTextBlockStyle}"/><TextBlock x:Name="XStatus"/><StackPanel Orientation="Horizontal" Spacing="8"><Button x:Name="XImport" Content="导入 cookies.txt" Click="YoutubeImport_Click"/><Button x:Name="XRemove" Content="移除会话" Click="YoutubeRemove_Click"/></StackPanel></StackPanel>
-  <ComboBox x:Name="XLayout" Header="X 帖子保存方式" HorizontalAlignment="Left"><ComboBoxItem Content="按帖子建文件夹"/><ComboBoxItem Content="按文件类型分类"/></ComboBox>
-  <TextBox x:Name="DirectoryBox" Header="保存目录"/><Button Content="选择保存目录" HorizontalAlignment="Left" Click="Directory_Click"/>
-  <Border Background="Transparent" CornerRadius="0" Padding="0"><StackPanel Spacing="12">
-   <TextBlock Text="组件管理" Style="{StaticResource SubtitleTextBlockStyle}"/>
+<Page x:Class="BiliDownload_Windows.Pages.SettingsPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ScrollViewer>
+    <StackPanel Padding="24,18,24,28" Spacing="16" MaxWidth="880" HorizontalAlignment="Stretch">
+      <TextBlock Text="设置" Style="{StaticResource SaltPageTitleStyle}" Margin="0,0,0,8"/>
 
-   <TextBlock x:Name="ComponentStatus" TextWrapping="Wrap"/>
-   <ComboBox x:Name="ComponentChoice" Header="下载组件" HorizontalAlignment="Stretch" DisplayMemberPath="DisplayName" SelectionChanged="ComponentChoice_Changed"/>
-   <Button x:Name="CheckYoutube" Content="检查组件更新" Visibility="Collapsed" Click="CheckYoutube_Click"/>
-   <TextBlock x:Name="ComponentSize" TextWrapping="Wrap" Foreground="{ThemeResource RadixSecondaryTextBrush}"/>
-   <StackPanel Orientation="Horizontal" Spacing="8"><Button x:Name="InstallComponent" Content="下载 / 使用" Click="InstallComponent_Click"/><Button x:Name="CancelComponent" Content="取消下载" IsEnabled="False" Click="CancelComponent_Click"/></StackPanel>
-   <StackPanel Orientation="Horizontal" Spacing="8"><Button x:Name="RemoveComponent" Content="移除组件" Click="RemoveComponent_Click"/><Button x:Name="BundledComponent" Content="恢复默认工具" Click="UseBundled_Click"/></StackPanel>
-   <ProgressBar x:Name="ComponentProgress" Visibility="Collapsed" Maximum="100"/>
-   <TextBlock x:Name="ComponentMessage" TextWrapping="Wrap"/>
-   <TextBox x:Name="FfmpegBox" Header="FFmpeg 程序路径" PlaceholderText="ffmpeg 或 ffmpeg.exe 的完整路径"/>
+      <!-- Section 1: Accounts & Sessions -->
+      <StackPanel>
+        <TextBlock Text="账号与平台会话" Style="{StaticResource SaltSectionTitleStyle}"/>
+        <Border Style="{StaticResource SaltGroupCardStyle}">
+          <StackPanel>
+            <Grid Padding="18,14" ColumnSpacing="14">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <Border Width="36" Height="36" CornerRadius="10" Background="{ThemeResource SaltAccentSoftBackgroundBrush}">
+                <FontIcon Glyph="&#xE77B;" FontSize="17" Foreground="{ThemeResource SaltAccentSoftForegroundBrush}"/>
+              </Border>
+              <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Text="Bilibili 账号" Style="{StaticResource SaltCardTitleStyle}"/>
+                  <Border Style="{StaticResource SaltAccentPillBadgeStyle}" Padding="7,1">
+                    <TextBlock Text="B 站" FontSize="11" Foreground="{ThemeResource SaltAccentSoftForegroundBrush}"/>
+                  </Border>
+                </StackPanel>
+                <TextBlock x:Name="AccountStatus" Text="未登录" Style="{StaticResource SaltCaptionStyle}" TextWrapping="Wrap"/>
+              </StackPanel>
+              <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Button x:Name="AccountLoginButton" Content="扫码登录" Style="{StaticResource SaltPillAccentButtonStyle}" Click="Login_Click"/>
+                <Button x:Name="AccountLogoutButton" Visibility="Collapsed" Content="退出登录" Style="{StaticResource SaltTonalButtonStyle}" Click="Logout_Click"/>
+              </StackPanel>
+            </Grid>
 
-  </StackPanel></Border>
-  <Border Background="Transparent" CornerRadius="0" Padding="0"><StackPanel Spacing="12">
-   <TextBlock Text="文件命名" Style="{StaticResource SubtitleTextBlockStyle}"/>
-   <TextBox x:Name="NamingTemplate" Header="默认文件名模板" TextChanged="Naming_Changed"/>
+            <Border Style="{StaticResource SaltInsetDividerStyle}"/>
 
-   <Expander Header="命名变量" HorizontalAlignment="Stretch"><ItemsControl x:Name="NamingVariables"><ItemsControl.ItemTemplate><DataTemplate><Button Content="{Binding Label}" Tag="{Binding Token}" Click="InsertVariable_Click" Margin="0,2"/></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></Expander>
-   <TextBlock x:Name="NamingPreview" TextWrapping="Wrap"/>
-   <Button Content="恢复默认命名" Click="ResetNaming_Click"/>
-  </StackPanel></Border>
-  <ToggleSwitch x:Name="DetectSwitch" Header="窗口获得焦点时识别剪贴板" OffContent="关闭" OnContent="开启"/>
-  <ToggleSwitch x:Name="MonitorSwitch" Header="程序运行时监听剪贴板" OffContent="关闭" OnContent="开启"/>
-  <ToggleSwitch x:Name="AutoDownloadSwitch" AutomationProperties.AutomationId="AutoDownloadSwitch" Header="点击通知后自动下载" OffContent="先解析，确认后下载" OnContent="下载链接指定的单项"/>
-  <ToggleSwitch x:Name="ExpandRelatedSwitch" AutomationProperties.AutomationId="ExpandRelatedSwitch" Header="展开分 P、剧集和播放列表" OffContent="仅处理链接指定条目" OnContent="展示完整列表，勾选后下载"/>
+            <Grid Padding="18,14" ColumnSpacing="14">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <Border Width="36" Height="36" CornerRadius="10" Background="{ThemeResource SaltSubCardBackgroundBrush}">
+                <FontIcon Glyph="&#xE714;" FontSize="17" Foreground="{ThemeResource RadixSecondaryTextBrush}"/>
+              </Border>
+              <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                <TextBlock Text="YouTube 账号" Style="{StaticResource SaltCardTitleStyle}"/>
+                <TextBlock x:Name="YoutubeStatus" Style="{StaticResource SaltCaptionStyle}"/>
+              </StackPanel>
+              <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <Button x:Name="YoutubeLoginButton" Content="登录 YouTube" Style="{StaticResource SaltTonalButtonStyle}" Click="YoutubeLogin_Click"/>
+                <Button x:Name="YoutubeMoreButton" Style="{StaticResource SaltTonalButtonStyle}" Padding="10,8" ToolTipService.ToolTip="更多选项">
+                  <FontIcon Glyph="&#xE712;" FontSize="14"/>
+                  <Button.Flyout>
+                    <MenuFlyout>
+                      <MenuFlyoutItem Text="导入 cookies.txt" Click="YoutubeImport_Click"/>
+                      <MenuFlyoutItem x:Name="YoutubeRemoveMenuItem" Text="退出登录（移除会话）" Click="YoutubeRemove_Click"/>
+                    </MenuFlyout>
+                  </Button.Flyout>
+                </Button>
+              </StackPanel>
+            </Grid>
 
-  <TextBlock x:Name="NotificationStatus" TextWrapping="Wrap"/>
-  <HyperlinkButton Content="打开 Windows 通知设置" NavigateUri="ms-settings:notifications" Padding="0,8" HorizontalAlignment="Left"/>
-  <ComboBox x:Name="CloseBehaviorBox" Header="关闭窗口时" SelectedValuePath="Tag" HorizontalAlignment="Left"><ComboBoxItem Content="每次询问" Tag="Ask"/><ComboBoxItem Content="最小化到托盘" Tag="Tray"/><ComboBoxItem Content="退出应用" Tag="Exit"/></ComboBox>
-  <ComboBox x:Name="ThemeBox" Header="外观" SelectedValuePath="Tag"><ComboBoxItem Content="跟随系统" Tag="Default"/><ComboBoxItem Content="浅色" Tag="Light"/><ComboBoxItem Content="深色" Tag="Dark"/></ComboBox>
-  <Button Content="保存设置" Style="{StaticResource AccentButtonStyle}" Click="Save_Click"/>
-  <InfoBar x:Name="Notice" IsOpen="False"/>
-  <TextBlock x:Name="VersionLabel" Foreground="{ThemeResource RadixSecondaryTextBrush}"/>
-  <HyperlinkButton Content="GitHub 仓库" NavigateUri="https://github.com/WkJ01N/BiliDownload" Padding="0,8" HorizontalAlignment="Left"/>
- </StackPanel></ScrollViewer>
+            <Border Style="{StaticResource SaltInsetDividerStyle}"/>
+
+            <Grid Padding="18,14" ColumnSpacing="14">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <Border Width="36" Height="36" CornerRadius="10" Background="{ThemeResource SaltSubCardBackgroundBrush}">
+                <FontIcon Glyph="&#xE8BD;" FontSize="17" Foreground="{ThemeResource RadixSecondaryTextBrush}"/>
+              </Border>
+              <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                <TextBlock Text="X（Twitter）账号" Style="{StaticResource SaltCardTitleStyle}"/>
+                <TextBlock x:Name="XStatus" Style="{StaticResource SaltCaptionStyle}"/>
+              </StackPanel>
+              <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <Button x:Name="XLoginButton" Content="登录 X" Style="{StaticResource SaltTonalButtonStyle}" Click="XLogin_Click"/>
+                <Button x:Name="XMoreButton" Style="{StaticResource SaltTonalButtonStyle}" Padding="10,8" ToolTipService.ToolTip="更多选项">
+                  <FontIcon Glyph="&#xE712;" FontSize="14"/>
+                  <Button.Flyout>
+                    <MenuFlyout>
+                      <MenuFlyoutItem Text="导入 cookies.txt" Click="XImport_Click"/>
+                      <MenuFlyoutItem x:Name="XRemoveMenuItem" Text="退出登录（移除会话）" Click="XRemove_Click"/>
+                    </MenuFlyout>
+                  </Button.Flyout>
+                </Button>
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+
+      <!-- Section 2: Appearance & Accent -->
+      <StackPanel>
+        <TextBlock Text="外观与个性化" Style="{StaticResource SaltSectionTitleStyle}"/>
+        <Border Style="{StaticResource SaltGroupCardStyle}">
+          <StackPanel>
+            <Grid Padding="18,14" ColumnSpacing="14">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <Border Width="36" Height="36" CornerRadius="10" Background="{ThemeResource SaltSubCardBackgroundBrush}">
+                <FontIcon Glyph="&#xE790;" FontSize="17" Foreground="{ThemeResource RadixSecondaryTextBrush}"/>
+              </Border>
+              <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                <TextBlock Text="外观模式" FontWeight="SemiBold"/>
+                <TextBlock Text="切换浅色、深色或跟随系统设置" Style="{StaticResource SaltCaptionStyle}"/>
+              </StackPanel>
+              <ComboBox x:Name="ThemeBox" Grid.Column="2" MinWidth="136" SelectedValuePath="Tag" SelectionChanged="ThemeBox_Changed">
+                <ComboBoxItem Content="跟随系统" Tag="Default"/>
+                <ComboBoxItem Content="浅色" Tag="Light"/>
+                <ComboBoxItem Content="深色" Tag="Dark"/>
+              </ComboBox>
+            </Grid>
+
+            <Border Style="{StaticResource SaltInsetDividerStyle}"/>
+
+            <Grid Padding="18,14" ColumnSpacing="14">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <Border Width="36" Height="36" CornerRadius="10" Background="{ThemeResource SaltAccentSoftBackgroundBrush}">
+                <FontIcon Glyph="&#xE790;" FontSize="17" Foreground="{ThemeResource SaltAccentSoftForegroundBrush}"/>
+              </Border>
+              <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                <TextBlock Text="主题强调色" FontWeight="SemiBold"/>
+                <TextBlock x:Name="AccentLabel" Text="品牌粉" Style="{StaticResource SaltCaptionStyle}"/>
+              </StackPanel>
+              <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <Button x:Name="AccentPink" Tag="Pink" Width="32" Height="32" Padding="0" CornerRadius="16"
+                        Background="#D6409F" BorderThickness="2" ToolTipService.ToolTip="品牌粉" Click="AccentSwatch_Click">
+                  <FontIcon x:Name="CheckPink" Glyph="&#xE73E;" FontSize="13" Foreground="#FCFCFC"/>
+                </Button>
+                <Button x:Name="AccentBlue" Tag="Blue" Width="32" Height="32" Padding="0" CornerRadius="16"
+                        Background="#0090FF" BorderThickness="2" ToolTipService.ToolTip="海盐蓝" Click="AccentSwatch_Click">
+                  <FontIcon x:Name="CheckBlue" Glyph="&#xE73E;" FontSize="13" Foreground="#FCFCFC" Visibility="Collapsed"/>
+                </Button>
+                <Button x:Name="AccentJade" Tag="Jade" Width="32" Height="32" Padding="0" CornerRadius="16"
+                        Background="#29A383" BorderThickness="2" ToolTipService.ToolTip="翡翠绿" Click="AccentSwatch_Click">
+                  <FontIcon x:Name="CheckJade" Glyph="&#xE73E;" FontSize="13" Foreground="#FCFCFC" Visibility="Collapsed"/>
+                </Button>
+                <Button x:Name="AccentAmber" Tag="Amber" Width="32" Height="32" Padding="0" CornerRadius="16"
+                        Background="#E2A336" BorderThickness="2" ToolTipService.ToolTip="琥珀金" Click="AccentSwatch_Click">
+                  <FontIcon x:Name="CheckAmber" Glyph="&#xE73E;" FontSize="13" Foreground="#FCFCFC" Visibility="Collapsed"/>
+                </Button>
+              </StackPanel>
+            </Grid>
+
+            <Border Style="{StaticResource SaltInsetDividerStyle}"/>
+
+            <Grid Padding="18,14" ColumnSpacing="14">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <Border Width="36" Height="36" CornerRadius="10" Background="{ThemeResource SaltSubCardBackgroundBrush}">
+                <FontIcon Glyph="&#xE8FD;" FontSize="17" Foreground="{ThemeResource RadixSecondaryTextBrush}"/>
+              </Border>
+              <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                <TextBlock Text="列表显示密度" FontWeight="SemiBold"/>
+                <TextBlock Text="调整下载队列与已完成卡片大小与间距" Style="{StaticResource SaltCaptionStyle}"/>
+              </StackPanel>
+              <ComboBox x:Name="DensityBox" Grid.Column="2" MinWidth="136" SelectedValuePath="Tag" SelectionChanged="DensityBox_Changed">
+                <ComboBoxItem Content="紧凑" Tag="Compact"/>
+                <ComboBoxItem Content="标准" Tag="Standard"/>
+                <ComboBoxItem Content="宽松" Tag="Comfortable"/>
+              </ComboBox>
+            </Grid>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+
+      <!-- Section 3: Storage & Naming -->
+      <StackPanel>
+        <TextBlock Text="存储与文件命名" Style="{StaticResource SaltSectionTitleStyle}"/>
+        <Border Style="{StaticResource SaltGroupCardStyle}">
+          <StackPanel>
+            <StackPanel Padding="18,16" Spacing="12">
+              <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBox x:Name="DirectoryBox" Header="保存目录"/>
+                <Button Grid.Column="1" Content="选择保存目录" Style="{StaticResource SaltTonalButtonStyle}"
+                        VerticalAlignment="Bottom" Click="Directory_Click"/>
+              </Grid>
+
+              <ComboBox x:Name="XLayout" Header="X 帖子保存方式" HorizontalAlignment="Left">
+                <ComboBoxItem Content="按帖子建文件夹"/>
+                <ComboBoxItem Content="按文件类型分类"/>
+              </ComboBox>
+            </StackPanel>
+
+            <Border Style="{StaticResource SaltInsetDividerStyle}"/>
+
+            <StackPanel Padding="18,16" Spacing="12">
+              <TextBox x:Name="NamingTemplate" Header="默认文件名模板" TextChanged="Naming_Changed"/>
+              <Border Style="{StaticResource SaltSubCardStyle}">
+                <TextBlock x:Name="NamingPreview" Style="{StaticResource SaltCaptionStyle}" TextWrapping="Wrap"/>
+              </Border>
+              <Expander Header="命名变量" HorizontalAlignment="Stretch" CornerRadius="10">
+                <ItemsControl x:Name="NamingVariables">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <VariableSizedWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="3" ItemWidth="112" ItemHeight="38"/>
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Button Content="{Binding Label}" Tag="{Binding Token}" Style="{StaticResource SaltCompactButtonStyle}"
+                              Click="InsertVariable_Click" Margin="0,2,6,2" HorizontalAlignment="Stretch"/>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </Expander>
+              <Button Content="恢复默认命名" Style="{StaticResource SaltTonalButtonStyle}" HorizontalAlignment="Left" Click="ResetNaming_Click"/>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+
+      <!-- Section 4: Clipboard & Behavior -->
+      <StackPanel>
+        <TextBlock Text="剪贴板与后台行为" Style="{StaticResource SaltSectionTitleStyle}"/>
+        <Border Style="{StaticResource SaltGroupCardStyle}">
+          <StackPanel>
+            <Grid Padding="18,12" ColumnSpacing="14">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <Border Width="36" Height="36" CornerRadius="10" Background="{ThemeResource SaltSubCardBackgroundBrush}">
+                <FontIcon Glyph="&#xE77F;" FontSize="17" Foreground="{ThemeResource RadixSecondaryTextBrush}"/>
+              </Border>
+              <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="窗口获得焦点时识别剪贴板" FontWeight="SemiBold"/>
+                <TextBlock Text="切回应用窗口时自动检测链接提示" Style="{StaticResource SaltCaptionStyle}"/>
+              </StackPanel>
+              <ToggleSwitch x:Name="DetectSwitch" Grid.Column="2" OffContent="关闭" OnContent="开启" MinWidth="0"/>
+            </Grid>
+
+            <Border Style="{StaticResource SaltInsetDividerStyle}"/>
+
+            <Grid Padding="18,12" ColumnSpacing="14">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <Border Width="36" Height="36" CornerRadius="10" Background="{ThemeResource SaltSubCardBackgroundBrush}">
+                <FontIcon Glyph="&#xEA8F;" FontSize="17" Foreground="{ThemeResource RadixSecondaryTextBrush}"/>
+              </Border>
+              <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="程序运行时监听剪贴板" FontWeight="SemiBold"/>
+                <TextBlock Text="后台复制可下载链接后弹出通知提示" Style="{StaticResource SaltCaptionStyle}"/>
+              </StackPanel>
+              <ToggleSwitch x:Name="MonitorSwitch" Grid.Column="2" OffContent="关闭" OnContent="开启" MinWidth="0"/>
+            </Grid>
+
+            <Border Style="{StaticResource SaltInsetDividerStyle}"/>
+
+            <Grid Padding="18,12" ColumnSpacing="14">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <Border Width="36" Height="36" CornerRadius="10" Background="{ThemeResource SaltSubCardBackgroundBrush}">
+                <FontIcon Glyph="&#xE896;" FontSize="17" Foreground="{ThemeResource RadixSecondaryTextBrush}"/>
+              </Border>
+              <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="点击通知后自动下载" FontWeight="SemiBold"/>
+                <TextBlock Text="可选择立即下载单项或先解析确认" Style="{StaticResource SaltCaptionStyle}"/>
+              </StackPanel>
+              <ToggleSwitch x:Name="AutoDownloadSwitch" Grid.Column="2" AutomationProperties.AutomationId="AutoDownloadSwitch"
+                            OffContent="先解析，确认后下载" OnContent="下载链接指定的单项" MinWidth="0"/>
+            </Grid>
+
+            <Border Style="{StaticResource SaltInsetDividerStyle}"/>
+
+            <Grid Padding="18,12" ColumnSpacing="14">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <Border Width="36" Height="36" CornerRadius="10" Background="{ThemeResource SaltSubCardBackgroundBrush}">
+                <FontIcon Glyph="&#xE8FD;" FontSize="17" Foreground="{ThemeResource RadixSecondaryTextBrush}"/>
+              </Border>
+              <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="展开分 P、剧集和播放列表" FontWeight="SemiBold"/>
+                <TextBlock Text="展示完整分 P、剧集或播放列表，勾选后下载" Style="{StaticResource SaltCaptionStyle}"/>
+              </StackPanel>
+              <ToggleSwitch x:Name="ExpandRelatedSwitch" Grid.Column="2" AutomationProperties.AutomationId="ExpandRelatedSwitch"
+                            OffContent="仅处理链接指定条目" OnContent="展示完整列表，勾选后下载" MinWidth="0"/>
+            </Grid>
+
+            <Border Style="{StaticResource SaltInsetDividerStyle}"/>
+
+            <Grid Padding="18,14" ColumnSpacing="14">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <Border Width="36" Height="36" CornerRadius="10" Background="{ThemeResource SaltSubCardBackgroundBrush}">
+                <FontIcon Glyph="&#xE7E7;" FontSize="17" Foreground="{ThemeResource RadixSecondaryTextBrush}"/>
+              </Border>
+              <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                <TextBlock Text="系统通知状态" FontWeight="SemiBold"/>
+                <TextBlock x:Name="NotificationStatus" Style="{StaticResource SaltCaptionStyle}" TextWrapping="Wrap"/>
+              </StackPanel>
+              <HyperlinkButton Grid.Column="2" Content="打开 Windows 通知设置" NavigateUri="ms-settings:notifications" Padding="4,6"/>
+            </Grid>
+
+            <Border Style="{StaticResource SaltInsetDividerStyle}"/>
+
+            <Grid Padding="18,14" ColumnSpacing="14">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <Border Width="36" Height="36" CornerRadius="10" Background="{ThemeResource SaltSubCardBackgroundBrush}">
+                <FontIcon Glyph="&#xE8BB;" FontSize="17" Foreground="{ThemeResource RadixSecondaryTextBrush}"/>
+              </Border>
+              <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                <TextBlock Text="关闭窗口时" FontWeight="SemiBold"/>
+                <TextBlock Text="决定点击关闭按钮后最小化托盘或直接退出" Style="{StaticResource SaltCaptionStyle}"/>
+              </StackPanel>
+              <ComboBox x:Name="CloseBehaviorBox" Grid.Column="2" MinWidth="150" SelectedValuePath="Tag">
+                <ComboBoxItem Content="每次询问" Tag="Ask"/>
+                <ComboBoxItem Content="最小化到托盘" Tag="Tray"/>
+                <ComboBoxItem Content="退出应用" Tag="Exit"/>
+              </ComboBox>
+            </Grid>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+
+      <!-- Section 5: Components -->
+      <StackPanel>
+        <TextBlock Text="组件管理" Style="{StaticResource SaltSectionTitleStyle}"/>
+        <Border Style="{StaticResource SaltGroupCardStyle}">
+          <StackPanel Padding="18,16" Spacing="12">
+            <Grid ColumnSpacing="12">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <StackPanel Spacing="2">
+                <TextBlock Text="解析与媒体处理组件" Style="{StaticResource SaltCardTitleStyle}"/>
+                <TextBlock x:Name="ComponentSize" TextWrapping="Wrap" Style="{StaticResource SaltCaptionStyle}"/>
+              </StackPanel>
+              <Border Grid.Column="1" Style="{StaticResource SaltAccentPillBadgeStyle}" VerticalAlignment="Center">
+                <TextBlock x:Name="ComponentStatus" FontSize="12" FontWeight="SemiBold"
+                           Foreground="{ThemeResource SaltAccentSoftForegroundBrush}"/>
+              </Border>
+            </Grid>
+
+            <ComboBox x:Name="ComponentChoice" Header="下载组件" HorizontalAlignment="Stretch"
+                      DisplayMemberPath="DisplayName" SelectionChanged="ComponentChoice_Changed"/>
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button x:Name="InstallComponent" Content="下载 / 使用" Style="{StaticResource SaltTonalButtonStyle}" Click="InstallComponent_Click"/>
+              <Button x:Name="CancelComponent" Content="取消下载" Style="{StaticResource SaltTonalButtonStyle}" IsEnabled="False" Click="CancelComponent_Click"/>
+              <Button x:Name="RemoveComponent" Content="移除组件" Style="{StaticResource SaltTonalButtonStyle}" Click="RemoveComponent_Click"/>
+              <Button x:Name="BundledComponent" Content="恢复默认工具" Style="{StaticResource SaltTonalButtonStyle}" Click="UseBundled_Click"/>
+              <Button x:Name="CheckYoutube" Content="检查组件更新" Style="{StaticResource SaltTonalButtonStyle}" Visibility="Collapsed" Click="CheckYoutube_Click"/>
+            </StackPanel>
+
+            <ProgressBar x:Name="ComponentProgress" Visibility="Collapsed" Maximum="100" Height="6" CornerRadius="3"/>
+            <TextBlock x:Name="ComponentMessage" Style="{StaticResource SaltCaptionStyle}" TextWrapping="Wrap"/>
+            <TextBox x:Name="FfmpegBox" Header="FFmpeg 程序路径" PlaceholderText="ffmpeg 或 ffmpeg.exe 的完整路径"/>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+
+      <!-- Save & Notice -->
+      <StackPanel Spacing="10">
+        <Button Content="保存设置" Style="{StaticResource SaltPillAccentButtonStyle}" HorizontalAlignment="Left" Click="Save_Click"/>
+        <InfoBar x:Name="Notice" IsOpen="False" CornerRadius="12"/>
+      </StackPanel>
+
+      <!-- Section 6: About -->
+      <StackPanel>
+        <TextBlock Text="关于" Style="{StaticResource SaltSectionTitleStyle}"/>
+        <Border Style="{StaticResource SaltGroupCardStyle}">
+          <Grid Padding="18,14" ColumnSpacing="14">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Border Width="36" Height="36" CornerRadius="10" Background="{ThemeResource SaltSubCardBackgroundBrush}">
+              <Image Source="ms-appx:///Assets/AppIcon.png" Width="24" Height="24" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+            </Border>
+            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+              <TextBlock Text="BiliDownload" FontWeight="SemiBold"/>
+              <TextBlock x:Name="VersionLabel" Style="{StaticResource SaltCaptionStyle}"/>
+            </StackPanel>
+            <HyperlinkButton Grid.Column="2" Content="GitHub 仓库" NavigateUri="https://github.com/WkJ01N/BiliDownload" Padding="8,6"/>
+          </Grid>
+        </Border>
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
 </Page>

@@ -9,62 +9,148 @@ namespace BiliDownload_Windows.Pages;
 public sealed partial class SettingsPage : Page
 {
     private CancellationTokenSource? componentDownload;
+    private string selectedAccent = "Pink";
+    private bool initialized;
     public sealed record NamingVariable(string Label, string Token);
+
     public SettingsPage()
     {
-        InitializeComponent(); var settings = App.Services.Settings;
+        InitializeComponent();
+        var settings = App.Services.Settings;
         VersionLabel.Text = $"BiliDownload  Windows 预览版 {typeof(SettingsPage).Assembly.GetName().Version?.ToString(3)}";
         var labels = new[] { "默认名称", "标题", "分项标题", "序号", "BV号", "编号" };
-        NamingVariables.ItemsSource = FileNaming.Variables.Select((v, i) => new NamingVariable(labels[i], "{" + v + "}")); NamingTemplate.Text = settings.FileNameTemplate; CloseBehaviorBox.SelectedValue = settings.CloseBehavior;
-        DirectoryBox.Text = settings.DownloadDirectory; FfmpegBox.Text = settings.FfmpegPath;
-        DetectSwitch.IsOn = settings.DetectOnActivate; MonitorSwitch.IsOn = settings.MonitorClipboard; ThemeBox.SelectedValue = settings.Theme;
-        AutoDownloadSwitch.IsOn = settings.AutoDownloadOnNotificationClick; ExpandRelatedSwitch.IsOn = settings.ExpandRelatedItems;
-        App.Services.Notifications.RefreshStatus(); NotificationStatus.Text = App.Services.Notifications.Status;
-        ComponentChoice.ItemsSource = App.Services.ComponentPackages; ComponentChoice.SelectedIndex = 0; RefreshComponents();
+        NamingVariables.ItemsSource = FileNaming.Variables.Select((v, i) => new NamingVariable(labels[i], "{" + v + "}"));
+        NamingTemplate.Text = settings.FileNameTemplate;
+        CloseBehaviorBox.SelectedValue = settings.CloseBehavior;
+        DirectoryBox.Text = settings.DownloadDirectory;
+        FfmpegBox.Text = settings.FfmpegPath;
+        DetectSwitch.IsOn = settings.DetectOnActivate;
+        MonitorSwitch.IsOn = settings.MonitorClipboard;
+        ThemeBox.SelectedValue = settings.Theme;
+        DensityBox.SelectedValue = settings.EffectiveListDensity;
+        AutoDownloadSwitch.IsOn = settings.AutoDownloadOnNotificationClick;
+        ExpandRelatedSwitch.IsOn = settings.ExpandRelatedItems;
+
+        selectedAccent = ThemeAccentHelper.Resolve(settings.AccentColor).Key;
+        SyncAccentSwatches();
+        UpdateNamingPreview();
+
+        App.Services.Notifications.RefreshStatus();
+        NotificationStatus.Text = App.Services.Notifications.Status;
+        ComponentChoice.ItemsSource = App.Services.ComponentPackages;
+        ComponentChoice.SelectedIndex = 0;
+        RefreshComponents();
         XLayout.SelectedIndex = settings.XSortByType ? 1 : 0;
         RefreshYoutubeAccount();
+
+        initialized = true;
         Unloaded += (_, _) => componentDownload?.Cancel();
         Loaded += async (_, _) => await RefreshAccountAsync();
     }
-    public void SelectXAccount() => XImport.StartBringIntoView();
+
+    public void SelectXAccount() => XLoginButton.StartBringIntoView();
     public void SelectFullFfmpeg() => SelectComponent("ffmpeg-full");
     public void SelectYoutubeComponent() => SelectComponent("youtube");
+
     private void SelectComponent(string id)
     {
         ComponentChoice.SelectedItem = App.Services.ComponentPackages.FirstOrDefault(p => p.Id == id);
         InstallComponent.StartBringIntoView();
     }
+
+    private void SyncAccentSwatches()
+    {
+        CheckPink.Visibility = selectedAccent == "Pink" ? Visibility.Visible : Visibility.Collapsed;
+        CheckBlue.Visibility = selectedAccent == "Blue" ? Visibility.Visible : Visibility.Collapsed;
+        CheckJade.Visibility = selectedAccent == "Jade" ? Visibility.Visible : Visibility.Collapsed;
+        CheckAmber.Visibility = selectedAccent == "Amber" ? Visibility.Visible : Visibility.Collapsed;
+        AccentLabel.Text = ThemeAccentHelper.Resolve(selectedAccent).Label;
+    }
+
+    private void AccentSwatch_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not string key) return;
+        selectedAccent = ThemeAccentHelper.Resolve(key).Key;
+        SyncAccentSwatches();
+        App.Main.PreviewAccent(selectedAccent);
+    }
+
+    private void ThemeBox_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (!initialized) return;
+        if (ThemeBox.SelectedValue is string themeKey) App.Main.PreviewTheme(themeKey);
+    }
+
+    private void DensityBox_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (!initialized) return;
+        if (DensityBox.SelectedValue is string density)
+        {
+            try
+            {
+                App.Services.SaveSettings(App.Services.Settings with { ListDensity = AppSettings.NormalizeListDensity(density) });
+            }
+            catch { }
+        }
+    }
+
     private void RefreshYoutubeAccount()
     {
         var hasX = App.Services.HasSession(true);
-        XStatus.Text = hasX ? "已导入会话" : "未关联账号";
-        XImport.Content = hasX ? "替换 cookies.txt" : "导入 cookies.txt";
-        XRemove.Visibility = hasX ? Visibility.Visible : Visibility.Collapsed;
+        XStatus.Text = hasX ? "已登录" : "未登录 · 点击登录以解析受限或需验证帖子";
+        XLoginButton.Content = hasX ? "重新登录" : "登录 X";
+        XRemoveMenuItem.Visibility = hasX ? Visibility.Visible : Visibility.Collapsed;
         var saved = App.Services.HasSession(false);
-        YoutubeStatus.Text = saved ? "已导入会话" : "未关联账号";
-        YoutubeImport.Content = saved ? "替换 cookies.txt" : "导入 cookies.txt";
-        YoutubeRemove.Visibility = saved ? Visibility.Visible : Visibility.Collapsed;
+        YoutubeStatus.Text = saved ? "已登录" : "未登录 · 点击登录以访问会员或受限视频";
+        YoutubeLoginButton.Content = saved ? "重新登录" : "登录 YouTube";
+        YoutubeRemoveMenuItem.Visibility = saved ? Visibility.Visible : Visibility.Collapsed;
     }
-    private async void YoutubeImport_Click(object sender, RoutedEventArgs e)
+
+    private async void YoutubeLogin_Click(object sender, RoutedEventArgs e) => await StartWebLoginAsync(WebLoginPlatform.YouTube);
+    private async void XLogin_Click(object sender, RoutedEventArgs e) => await StartWebLoginAsync(WebLoginPlatform.X);
+
+    private async Task StartWebLoginAsync(WebLoginPlatform platform)
     {
-        try {
+        var result = await WebLoginWindow.ShowAsync(platform);
+        RefreshYoutubeAccount();
+        if (result.Outcome == LoginOutcome.Success)
+            Show($"{(platform == WebLoginPlatform.X ? "X" : "YouTube")} 登录成功，可返回重试。", InfoBarSeverity.Success);
+        else if (result.Outcome == LoginOutcome.Failed && result.Message != null)
+            Show(result.Message, InfoBarSeverity.Error);
+    }
+
+    private async void YoutubeImport_Click(object sender, RoutedEventArgs e) => await ImportCookiesFileAsync(false);
+    private async void XImport_Click(object sender, RoutedEventArgs e) => await ImportCookiesFileAsync(true);
+
+    private async Task ImportCookiesFileAsync(bool isX)
+    {
+        try
+        {
             var picker = new FileOpenPicker(); picker.FileTypeFilter.Add(".txt");
             WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(App.Main));
             var file = await picker.PickSingleFileAsync(); if (file == null) return;
-            App.Services.ImportSession(file.Path, ReferenceEquals(sender, XImport)); RefreshYoutubeAccount(); Show("会话已导入，可返回重试。", InfoBarSeverity.Success);
-        } catch (Exception ex) { Show(ex is BiliException ? ex.Message : "无法导入会话文件。", InfoBarSeverity.Error); }
+            App.Services.ImportSession(file.Path, isX); RefreshYoutubeAccount(); Show("会话已导入，可返回重试。", InfoBarSeverity.Success);
+        }
+        catch (Exception ex) { Show(ex is BiliException ? ex.Message : "无法导入会话文件。", InfoBarSeverity.Error); }
     }
-    private void YoutubeRemove_Click(object sender, RoutedEventArgs e)
+
+    private void YoutubeRemove_Click(object sender, RoutedEventArgs e) => ClearPlatformSession(false);
+    private void XRemove_Click(object sender, RoutedEventArgs e) => ClearPlatformSession(true);
+
+    private void ClearPlatformSession(bool isX)
     {
-        try { App.Services.ClearSession(ReferenceEquals(sender, XRemove)); RefreshYoutubeAccount(); }
+        try { App.Services.ClearSession(isX); RefreshYoutubeAccount(); Show(isX ? "X 会话已移除。" : "YouTube 会话已移除。", InfoBarSeverity.Success); }
         catch (IOException) { Show("无法移除本机会话。", InfoBarSeverity.Error); }
     }
+
     public void SyncClosePreference() => CloseBehaviorBox.SelectedValue = App.Services.Settings.CloseBehavior;
+
     private void RefreshComponents()
     {
         var resolved = App.Services.ResolveFfmpeg();
         var package = ComponentChoice.SelectedItem as ComponentPackage;
-        if (package != null) {
+        if (package != null)
+        {
             CheckYoutube.Visibility = package.Id == "youtube" ? Visibility.Visible : Visibility.Collapsed;
             var installed = App.Services.Components.InstalledPath(package);
             bool enabled = installed != null && (package.Id == "youtube" ? App.Services.IsYoutubeActive(package) :
@@ -76,12 +162,14 @@ public sealed partial class SettingsPage : Page
         }
         RemoveComponent.IsEnabled = componentDownload == null && package != null && App.Services.Components.InstalledPath(package) != null;
     }
+
     private void ComponentChoice_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (ComponentChoice.SelectedItem is not ComponentPackage package) return;
-        ComponentSize.Text = $"下载约 {package.DownloadBytes / 1048576.0:F1} MiB  安装约 {package.InstalledBytes / 1048576.0:F1} MiB";
+        ComponentSize.Text = $"下载约 {package.DownloadBytes / 1048576.0:F1} MiB  ·  安装约 {package.InstalledBytes / 1048576.0:F1} MiB";
         RefreshComponents();
     }
+
     private async void CheckYoutube_Click(object sender, RoutedEventArgs e)
     {
         if (componentDownload != null) return;
@@ -89,23 +177,29 @@ public sealed partial class SettingsPage : Page
         componentDownload = timeout;
         CheckYoutube.IsEnabled = ComponentChoice.IsEnabled = BundledComponent.IsEnabled = false;
         RefreshComponents();
-        try {
+        try
+        {
             bool found = await App.Services.CheckYoutubeUpdateAsync(timeout.Token);
             ComponentChoice.ItemsSource = App.Services.ComponentPackages; SelectYoutubeComponent();
             ComponentMessage.Text = found ? "发现新版本，可下载更新。" : "当前已是最新版本。";
-        } catch (Exception) { ComponentMessage.Text = "无法检查更新，请稍后重试。"; }
-        finally {
+        }
+        catch (Exception) { ComponentMessage.Text = "无法检查更新，请稍后重试。"; }
+        finally
+        {
             componentDownload = null;
             CheckYoutube.IsEnabled = ComponentChoice.IsEnabled = BundledComponent.IsEnabled = true;
             RefreshComponents();
         }
     }
+
     private bool QueueBusy() => App.Services.Queue.Snapshot().Any(t => t.State is DownloadState.Queued or DownloadState.Downloading or DownloadState.Merging);
+
     private void UseFfmpeg(string path)
     {
         App.Services.SaveSettings(App.Services.Settings with { FfmpegPath = path });
         FfmpegBox.Text = path; RefreshComponents();
     }
+
     private async void InstallComponent_Click(object sender, RoutedEventArgs e)
     {
         if (ComponentChoice.SelectedItem is not ComponentPackage package || componentDownload != null) return;
@@ -114,7 +208,8 @@ public sealed partial class SettingsPage : Page
         try
         {
             bool download = App.Services.Components.InstalledPath(package) == null;
-            var confirm = new ContentDialog {
+            var confirm = new ContentDialog
+            {
                 XamlRoot = XamlRoot, Title = download ? "下载并启用组件？" : "启用组件？",
                 Content = download ? $"{package.DisplayName}\n下载约 {package.DownloadBytes / 1048576.0:F1} MiB，安装占用约 {package.InstalledBytes / 1048576.0:F1} MiB。" : package.DisplayName,
                 PrimaryButtonText = download ? "下载并启用" : "启用", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Primary
@@ -143,29 +238,36 @@ public sealed partial class SettingsPage : Page
             CancelComponent.IsEnabled = false; ComponentProgress.Visibility = Visibility.Collapsed; RefreshComponents();
         }
     }
+
     private void CancelComponent_Click(object sender, RoutedEventArgs e) => componentDownload?.Cancel();
+
     private void RemoveComponent_Click(object sender, RoutedEventArgs e)
     {
         if (ComponentChoice.SelectedItem is not ComponentPackage package) return;
         if (QueueBusy()) { ComponentMessage.Text = "请先暂停正在运行的下载，再移除组件。"; return; }
-        try {
+        try
+        {
             var installed = App.Services.Components.InstalledPath(package);
             if (package.Id == "youtube") App.Services.RemoveYoutube(package); else App.Services.Components.Remove(package);
             if (installed != null && App.Services.Settings.FfmpegPath == installed) UseFfmpeg("ffmpeg");
             ComponentMessage.Text = "下载的组件已移除，视频及任务记录保留。"; RefreshComponents();
-        } catch (Exception) { ComponentMessage.Text = "组件正在使用或目录不可写，暂时无法移除。"; }
+        }
+        catch (Exception) { ComponentMessage.Text = "组件正在使用或目录不可写，暂时无法移除。"; }
     }
+
     private void UseBundled_Click(object sender, RoutedEventArgs e)
     {
         var bundled = Path.Combine(AppContext.BaseDirectory, "tools", "ffmpeg.exe");
         UseFfmpeg(File.Exists(bundled) ? bundled : "ffmpeg"); ComponentMessage.Text = "工具配置已更新。";
     }
+
     private async Task RefreshAccountAsync()
     {
         try { var data = await App.Services.Bili.ApiAsync("https://api.bilibili.com/x/web-interface/nav"); var loggedIn = data.Num("isLogin") != 0; AccountStatus.Text = loggedIn ? data.Str("uname") : "未登录"; AccountLoginButton.Visibility = loggedIn ? Visibility.Collapsed : Visibility.Visible; AccountLogoutButton.Visibility = loggedIn ? Visibility.Visible : Visibility.Collapsed; }
         catch (BiliException ex) { AccountStatus.Text = ex.Kind == BiliErrorKind.RequestRestricted ? "请求受限，暂时无法验证登录状态" : "未登录或登录已过期"; }
         catch (Exception) { AccountStatus.Text = "暂时无法验证登录状态，请检查网络"; }
     }
+
     private async void Login_Click(object sender, RoutedEventArgs e)
     {
         ((Button)sender).IsEnabled = false;
@@ -177,6 +279,7 @@ public sealed partial class SettingsPage : Page
         }
         finally { ((Button)sender).IsEnabled = true; }
     }
+
     private async void Directory_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -187,11 +290,13 @@ public sealed partial class SettingsPage : Page
         }
         catch (Exception) { Show("无法打开目录选择器，也可以手动填写路径。", InfoBarSeverity.Warning); }
     }
+
     private async void Logout_Click(object sender, RoutedEventArgs e)
     {
         try { App.Services.Logout(); await RefreshAccountAsync(); Show("已删除本机登录信息。", InfoBarSeverity.Success); }
         catch (Exception) { Show("删除登录信息失败，请检查本地目录权限。", InfoBarSeverity.Error); }
     }
+
     private void Save_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -199,22 +304,40 @@ public sealed partial class SettingsPage : Page
             if (!Path.IsPathFullyQualified(DirectoryBox.Text) || string.IsNullOrWhiteSpace(FfmpegBox.Text)) throw new BiliException("请填写绝对保存路径及 FFmpeg 程序路径。");
             FileNaming.Validate(NamingTemplate.Text);
             Directory.CreateDirectory(DirectoryBox.Text);
-            App.Services.SaveSettings(App.Services.Settings with { DownloadDirectory = DirectoryBox.Text.Trim(), FfmpegPath = FfmpegBox.Text.Trim(),
-                DetectOnActivate = DetectSwitch.IsOn, MonitorClipboard = MonitorSwitch.IsOn, Theme = ThemeBox.SelectedValue as string ?? "Default",
-                AutoDownloadOnNotificationClick = AutoDownloadSwitch.IsOn, ExpandRelatedItems = ExpandRelatedSwitch.IsOn, FileNameTemplate = NamingTemplate.Text, XSortByType = XLayout.SelectedIndex == 1, CloseBehavior = CloseBehaviorBox.SelectedValue as string ?? "Ask" });
+            App.Services.SaveSettings(App.Services.Settings with
+            {
+                DownloadDirectory = DirectoryBox.Text.Trim(),
+                FfmpegPath = FfmpegBox.Text.Trim(),
+                DetectOnActivate = DetectSwitch.IsOn,
+                MonitorClipboard = MonitorSwitch.IsOn,
+                Theme = ThemeBox.SelectedValue as string ?? "Default",
+                AutoDownloadOnNotificationClick = AutoDownloadSwitch.IsOn,
+                ExpandRelatedItems = ExpandRelatedSwitch.IsOn,
+                FileNameTemplate = NamingTemplate.Text,
+                XSortByType = XLayout.SelectedIndex == 1,
+                CloseBehavior = CloseBehaviorBox.SelectedValue as string ?? "Ask",
+                AccentColor = selectedAccent,
+                ListDensity = AppSettings.NormalizeListDensity(DensityBox.SelectedValue as string),
+            });
             RefreshComponents(); App.Main.ApplyTheme(); Show("设置已保存", InfoBarSeverity.Success);
         }
         catch (Exception ex) { Show(ex is BiliException ? ex.Message : "设置保存失败，请检查目录是否可写。", InfoBarSeverity.Error); }
     }
-    private void Naming_Changed(object sender, TextChangedEventArgs e) {
+
+    private void Naming_Changed(object sender, TextChangedEventArgs e) => UpdateNamingPreview();
+    private void UpdateNamingPreview()
+    {
         if (NamingPreview == null) return;
         try { NamingPreview.Text = "预览：" + FileNaming.Render(new("video:123", "示例视频", "第二部分", "", MediaKind.Video, 1, "BV1xx411c7mD", 123, 0, 2, "", 3), NamingTemplate.Text); }
         catch (BiliException ex) { NamingPreview.Text = ex.Message; }
     }
-    private void InsertVariable_Click(object sender, RoutedEventArgs e) {
+
+    private void InsertVariable_Click(object sender, RoutedEventArgs e)
+    {
         var start = NamingTemplate.SelectionStart;
         NamingTemplate.Text = NamingTemplate.Text.Insert(start, (string)((Button)sender).Tag);
     }
+
     private void ResetNaming_Click(object sender, RoutedEventArgs e) => NamingTemplate.Text = FileNaming.DefaultTemplate;
     private void Show(string text, InfoBarSeverity severity) { Notice.Message = text; Notice.Severity = severity; Notice.IsOpen = true; }
 }

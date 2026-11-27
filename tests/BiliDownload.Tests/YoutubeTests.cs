@@ -63,4 +63,31 @@ public class YoutubeTests
         legacy.Remove("FormatId"); legacy["Item"]!.AsObject().Remove("YoutubeId");
         Assert.Null(legacy.Deserialize<DownloadTaskData>()!.Item.YoutubeId);
     }
+    [Fact] public void BrowserCookiesConvertAndRequireAuth()
+    {
+        var now = 2_000_000_000L;
+        var yt = YoutubeCookies.FromBrowserCookies([
+            new(".youtube.com", "/", true, true, now + 3600, "SID", "abc"),
+            new(".google.com", "/", true, true, now + 3600, "OTHER", "ignored"),
+            new(".youtube.com", "/", true, true, now - 10, "SAPISID", "expired"),
+        ], x: false, now: now);
+        Assert.Contains("\tSID\tabc", yt);
+        Assert.DoesNotContain("OTHER", yt);
+
+        Assert.Throws<BiliException>(() => YoutubeCookies.FromBrowserCookies([
+            new(".youtube.com", "/", true, false, now + 3600, "PREF", "no-auth"),
+        ], x: false, now: now));
+
+        var x = YoutubeCookies.FromBrowserCookies([
+            new(".x.com", "/", true, true, now + 3600, "auth_token", "tok123"),
+        ], x: true, now: now);
+        Assert.Contains("\tauth_token\ttok123", x);
+
+        Assert.Throws<BiliException>(() => YoutubeCookies.FromBrowserCookies([
+            new(".x.com", "/", true, false, now + 3600, "guest_id", "g1"),
+        ], x: true, now: now));
+
+        Assert.Equal("Standard", AppSettings.NormalizeListDensity("Unknown"));
+        Assert.Equal("Compact", AppSettings.NormalizeListDensity("Compact"));
+    }
 }

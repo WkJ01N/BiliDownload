@@ -37,4 +37,14 @@ class YoutubeTest {
         val data = "#HttpOnly_.youtube.com\tTRUE\t/\tTRUE\t0\tSID\tok\n.google.com\tTRUE\t/\tTRUE\t0\tOTHER\tdrop\n.youtube.com\tTRUE\t/\tTRUE\t10\tOLD\tdrop"
         assertEquals("# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tSID\tok\n", YoutubeCookies.filter(data, 20))
     }
+    @Test fun webViewCookiesRequirePlatformAuth() {
+        assertTrue(YoutubeCookies.hasAuthCookies(listOf("PREF=tz=UTC; SID=secret"), x = false))
+        assertFalse(YoutubeCookies.hasAuthCookies(listOf("PREF=tz=UTC"), x = false))
+        val yt = YoutubeCookies.fromWebViewCookies(listOf("youtube.com" to "VISITOR=1; __Secure-3PSID=val"), x = false, now = 20)
+        assertTrue(yt.contains(".youtube.com\tTRUE\t/\tTRUE\t0\t__Secure-3PSID\tval"))
+
+        assertTrue(YoutubeCookies.hasAuthCookies(listOf("guest_id=1; auth_token=xtok"), x = true))
+        val x = YoutubeCookies.fromWebViewCookies(listOf("x.com" to "auth_token=xtok; ct0=csrf"), x = true, now = 20)
+        assertTrue(x.contains(".x.com\tTRUE\t/\tTRUE\t0\tauth_token\txtok"))
+    }
 }

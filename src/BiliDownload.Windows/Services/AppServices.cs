@@ -102,7 +102,11 @@ public sealed class AppServices : IAsyncDisposable
     {
         if (new FileInfo(path).Length > YoutubeCookies.MaximumBytes) throw new BiliException("会话文件超过 128 KiB，请仅导出该平台的记录。");
         var input = File.ReadAllText(path);
-        var text = x ? YoutubeCookies.FilterX(input) : YoutubeCookies.Filter(input);
+        SaveSessionCookies(input, x);
+    }
+    public void SaveSessionCookies(string netscapeInput, bool x)
+    {
+        var text = x ? YoutubeCookies.FilterX(netscapeInput) : YoutubeCookies.Filter(netscapeInput);
         var target = SessionFile(x);
         File.WriteAllBytes(target + ".tmp", ProtectedData.Protect(Encoding.UTF8.GetBytes(text), null, DataProtectionScope.CurrentUser));
         File.Move(target + ".tmp", target, true);

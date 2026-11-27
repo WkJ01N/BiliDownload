@@ -10,7 +10,7 @@ val audioLibraries = rootProject.layout.projectDirectory.dir("audio/build/genera
 android {
     namespace = "io.github.bilidownload"
     compileSdk = 36
-    defaultConfig { applicationId = "io.github.bilidownload"; minSdk = 29; targetSdk = 36; versionCode = 12; versionName = "0.4.1"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
+    defaultConfig { applicationId = "io.github.bilidownload"; minSdk = 29; targetSdk = 36; versionCode = 13; versionName = "0.4.2"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
     buildFeatures { compose = true; buildConfig = true }
     sourceSets["androidTest"].assets.srcDir("build/generated/audioFixtures")
     sourceSets["main"].assets.srcDir(mediaAssets.get().asFile)
@@ -20,7 +20,26 @@ android {
         jniLibs.keepDebugSymbols += "**/libpython.zip.so"
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
-    buildTypes { release { isMinifyEnabled = false } }
+    val enableAbiSplits = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+    splits {
+        abi {
+            isEnable = enableAbiSplits
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = false
+        }
+    }
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = signingConfigs.getByName("debug")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+        }
+    }
 }
 dependencies {
     mediaRuntime("io.github.junkfood02.youtubedl-android:library:0.18.1@aar")

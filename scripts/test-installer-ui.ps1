@@ -1,4 +1,4 @@
-param([string]$Installer)
+﻿param([string]$Installer)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,System.Drawing
 Add-Type @'
@@ -24,9 +24,9 @@ New-Item -ItemType Directory -Force $testRoot | Out-Null
 if (-not $Installer) {
     $compiler = & (Join-Path $PSScriptRoot 'install-inno.ps1')
     $full = & (Join-Path $PSScriptRoot 'get-component.ps1') -Id ffmpeg-full
-    & $compiler /Q "/DPackageDir=$(Join-Path $projectRoot 'artifacts/windows-0.4.1')" "/DFullFfmpegDir=$full" "/DDirectoryHelper=$(Join-Path $projectRoot '.build/installer-helper/PrepareDirectory.exe')" "/DOutputDir=$testRoot" "/DApplicationId=BiliDownload.WkJ01N.UI.$([Guid]::NewGuid().ToString('N'))" /DTestMode=1 (Join-Path $projectRoot 'packaging/windows.iss')
+    & $compiler /Q "/DPackageDir=$(Join-Path $projectRoot 'artifacts/windows-0.4.2')" "/DFullFfmpegDir=$full" "/DDirectoryHelper=$(Join-Path $projectRoot '.build/installer-helper/PrepareDirectory.exe')" "/DOutputDir=$testRoot" "/DApplicationId=BiliDownload.WkJ01N.UI.$([Guid]::NewGuid().ToString('N'))" /DTestMode=1 (Join-Path $projectRoot 'packaging/windows.iss')
     if ($LASTEXITCODE -ne 0) { throw 'QA installer compilation failed.' }
-    $Installer = Join-Path $testRoot 'BiliDownload-0.4.1-windows-x64-setup.exe'
+    $Installer = Join-Path $testRoot 'BiliDownload-0.4.2-windows-x64-setup.exe'
 }
 function Find-Wizard {
     $script:wizard = [IntPtr]::Zero

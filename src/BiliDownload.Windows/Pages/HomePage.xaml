@@ -1,36 +1,236 @@
-<Page x:Class="BiliDownload_Windows.Pages.HomePage" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-  <ScrollViewer><StackPanel Padding="24,20" Spacing="20">
-    <TextBlock Text="链接解析" AutomationProperties.AutomationId="HomePageTitle" Style="{StaticResource TitleTextBlockStyle}"/>
-    <Border Background="Transparent" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0" CornerRadius="0" Padding="0" BackgroundSizing="InnerBorderEdge">
-      <StackPanel Spacing="14">
-        <TextBox x:Name="LinkInput" Header="链接" PlaceholderText="粘贴 B 站、YouTube 或 X 帖子链接" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="100" MaxHeight="180"/>
-        <StackPanel Orientation="Horizontal" Spacing="10"><Button x:Name="ParseButton" Content="解析链接" Style="{StaticResource AccentButtonStyle}" Click="Parse_Click"/><Button Content="粘贴" Click="Paste_Click"/><ProgressRing x:Name="Busy" Width="24" Height="24" IsActive="False"/></StackPanel>
-      </StackPanel>
-    </Border>
-    <InfoBar x:Name="Notice" IsOpen="False" IsClosable="True"><InfoBar.Content><StackPanel Spacing="8"><Button x:Name="LoginButton" Content="登录 B 站" Visibility="Collapsed" Click="Login_Click"/><Button x:Name="RetryButton" Content="重新解析" Visibility="Collapsed" Click="Parse_Click"/><Button x:Name="ComponentButton" Content="安装 / 配置 FFmpeg" Visibility="Collapsed" Click="Component_Click"/></StackPanel></InfoBar.Content></InfoBar>
-    <TextBlock x:Name="ResultTitle" Visibility="Collapsed" Text="" Style="{StaticResource SubtitleTextBlockStyle}"/>
-    <StackPanel x:Name="ResultActions" Visibility="Collapsed" Spacing="12"><StackPanel Orientation="Horizontal" Spacing="12"><Button Content="全选" Click="SelectAll_Click"/><Button Content="取消全选" Click="SelectNone_Click"/></StackPanel><ComboBox x:Name="ModeBox" Header="下载内容" HorizontalAlignment="Left" SelectionChanged="Estimate_Changed"><ComboBoxItem Content="按链接类型"/><ComboBoxItem Content="视频"/><ComboBoxItem Content="音频"/></ComboBox>
-    <ComboBox x:Name="ExportBox" Header="音频格式" Visibility="Collapsed" SelectedIndex="0" SelectionChanged="Estimate_Changed"><ComboBoxItem Content="保留原音"/><ComboBoxItem Content="MP3"/></ComboBox>
-    <ComboBox x:Name="RateBox" Header="MP3 码率" Visibility="Collapsed" SelectedIndex="0" SelectionChanged="Estimate_Changed"><ComboBoxItem Content="320 kb/s"/><ComboBoxItem Content="192 kb/s"/><ComboBoxItem Content="128 kb/s"/></ComboBox>
-    <ComboBox x:Name="QualityBox" Header="画质上限" MinWidth="170" MaxWidth="280" HorizontalAlignment="Left" DisplayMemberPath="DisplayLabel" SelectionChanged="Estimate_Changed" SelectedValuePath="Quality"/><Button x:Name="DownloadButton" Content="下载选中内容" HorizontalAlignment="Left" Style="{StaticResource AccentButtonStyle}" IsEnabled="False" Click="Download_Click"/></StackPanel>
-    <TextBlock x:Name="SizeSummary" Visibility="Collapsed" Text="" Foreground="{ThemeResource RadixSecondaryTextBrush}" TextWrapping="Wrap"/>
-    <ListView ContainerContentChanging="ResultContainer_Changing" SelectionChanged="Estimate_Changed" x:Name="Results" Visibility="Collapsed" SelectionMode="Multiple" MaxHeight="1100">
-      <ListView.ItemTemplate><DataTemplate>
-        <Grid Padding="4,10"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-          <Image Source="{Binding Cover}" Visibility="{Binding CoverVisibility}" Width="120" Height="74" Margin="0,0,16,0" Stretch="UniformToFill"/>
-          <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
-              <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap"/>
-              <TextBlock Text="{Binding PartTitle}" Foreground="{ThemeResource RadixSecondaryTextBrush}" TextWrapping="Wrap"/>
-              <TextBlock Text="{Binding PostText}" Visibility="{Binding PostTextVisibility}" IsTextSelectionEnabled="True" TextWrapping="Wrap"/>
-              <TextBlock Text="{Binding FileName}" Foreground="{ThemeResource RadixSecondaryTextBrush}" TextWrapping="Wrap"/>
-              <TextBlock Text="{Binding SizeText}" Foreground="{ThemeResource RadixSecondaryTextBrush}" TextWrapping="Wrap"/>
-              <Button Content="{Binding GifLabel}" Visibility="{Binding GifVisibility}" Tag="{Binding Id}" Click="GifFormat_Click"/>
-              <Button Content="{Binding AudioChoice}" Visibility="{Binding AudioVisibility}" Tag="{Binding Id}" Click="Track_Click"/>
-              <Button Content="修改文件名" AutomationProperties.AutomationId="{Binding Id}" Tag="{Binding Id}" Click="Rename_Click"/>
+<Page x:Class="BiliDownload_Windows.Pages.HomePage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ScrollViewer>
+    <StackPanel Padding="24,18,24,28" Spacing="16" MaxWidth="980" HorizontalAlignment="Stretch">
+      <!-- Page Header -->
+      <TextBlock Text="链接解析" AutomationProperties.AutomationId="HomePageTitle" Style="{StaticResource SaltPageTitleStyle}" Margin="0,0,0,8"/>
+
+      <!-- Hero Input Card -->
+      <Border Style="{StaticResource SaltHeroCardStyle}">
+        <StackPanel Spacing="14">
+          <!-- Active 3-Platform Chips -->
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Border Style="{StaticResource SaltAccentPillBadgeStyle}">
+              <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <Ellipse Width="7" Height="7" Fill="{ThemeResource AccentFillColorDefaultBrush}"/>
+                <TextBlock Text="Bilibili" FontSize="12" FontWeight="SemiBold" Foreground="{ThemeResource SaltAccentSoftForegroundBrush}"/>
+              </StackPanel>
+            </Border>
+            <Border Style="{StaticResource SaltPillBadgeStyle}">
+              <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <Ellipse Width="7" Height="7" Fill="{ThemeResource SystemFillColorSuccessBrush}"/>
+                <TextBlock Text="YouTube / Music" FontSize="12" FontWeight="Medium"/>
+              </StackPanel>
+            </Border>
+            <Border Style="{StaticResource SaltPillBadgeStyle}">
+              <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <Ellipse Width="7" Height="7" Fill="{ThemeResource SystemFillColorAttentionBrush}"/>
+                <TextBlock Text="X" FontSize="12" FontWeight="Medium"/>
+              </StackPanel>
+            </Border>
           </StackPanel>
+
+          <TextBox x:Name="LinkInput"
+                   PlaceholderText="粘贴 B 站、YouTube、YouTube Music 或 X 帖子链接，多条可换行"
+                   AcceptsReturn="True" TextWrapping="Wrap" MinHeight="96" MaxHeight="170"
+                   TextChanged="LinkInput_TextChanged"/>
+
+          <Grid ColumnSpacing="10">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Button x:Name="ParseButton" Style="{StaticResource SaltPillAccentButtonStyle}" Click="Parse_Click">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <FontIcon Glyph="&#xE721;" FontSize="14"/>
+                <TextBlock x:Name="ParseButtonLabel" Text="解析链接"/>
+              </StackPanel>
+            </Button>
+            <Button Grid.Column="1" Style="{StaticResource SaltTonalButtonStyle}" Click="Paste_Click">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <FontIcon Glyph="&#xE77F;" FontSize="14"/>
+                <TextBlock Text="粘贴"/>
+              </StackPanel>
+            </Button>
+            <Button x:Name="ClearButton" Grid.Column="2" Style="{StaticResource SaltTonalButtonStyle}"
+                    Visibility="Collapsed" Click="Clear_Click">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <FontIcon Glyph="&#xE711;" FontSize="13"/>
+                <TextBlock Text="清空"/>
+              </StackPanel>
+            </Button>
+            <ProgressRing x:Name="Busy" Grid.Column="3" HorizontalAlignment="Left" Width="22" Height="22" IsActive="False"/>
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <!-- Notice Banner -->
+      <InfoBar x:Name="Notice" IsOpen="False" IsClosable="True" CornerRadius="12">
+        <InfoBar.Content>
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,6">
+            <Button x:Name="LoginButton" Content="登录 B 站" Visibility="Collapsed" Style="{StaticResource SaltCompactButtonStyle}" Click="Login_Click"/>
+            <Button x:Name="RetryButton" Content="重新解析" Visibility="Collapsed" Style="{StaticResource SaltCompactButtonStyle}" Click="Parse_Click"/>
+            <Button x:Name="ComponentButton" Content="安装 / 配置 FFmpeg" Visibility="Collapsed" Style="{StaticResource SaltCompactButtonStyle}" Click="Component_Click"/>
+          </StackPanel>
+        </InfoBar.Content>
+      </InfoBar>
+
+      <!-- Empty Guidance Card -->
+      <Border x:Name="EmptyGuide" Style="{StaticResource SaltCardStyle}">
+        <Grid ColumnSpacing="14" RowSpacing="12">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="*"/>
+          </Grid.ColumnDefinitions>
+          <Border Grid.Column="0" Style="{StaticResource SaltSubCardStyle}">
+            <StackPanel Spacing="6">
+              <Border Style="{StaticResource SaltAccentPillBadgeStyle}" HorizontalAlignment="Left">
+                <TextBlock Text="01 多平台解析" FontSize="11" FontWeight="SemiBold" Foreground="{ThemeResource SaltAccentSoftForegroundBrush}"/>
+              </Border>
+              <TextBlock Text="支持 B 站视频/番剧/课程、YouTube 视频/音乐/列表与 X 帖子" Style="{StaticResource SaltCaptionStyle}" TextWrapping="Wrap"/>
+            </StackPanel>
+          </Border>
+          <Border Grid.Column="1" Style="{StaticResource SaltSubCardStyle}">
+            <StackPanel Spacing="6">
+              <Border Style="{StaticResource SaltPillBadgeStyle}" HorizontalAlignment="Left">
+                <TextBlock Text="02 音画与格式" FontSize="11" FontWeight="SemiBold"/>
+              </Border>
+              <TextBlock Text="可选视频画质、原音/MP3 导出、动图 MP4/GIF 与单条改名" Style="{StaticResource SaltCaptionStyle}" TextWrapping="Wrap"/>
+            </StackPanel>
+          </Border>
+          <Border Grid.Column="2" Style="{StaticResource SaltSubCardStyle}">
+            <StackPanel Spacing="6">
+              <Border Style="{StaticResource SaltPillBadgeStyle}" HorizontalAlignment="Left">
+                <TextBlock Text="03 队列与分享" FontSize="11" FontWeight="SemiBold"/>
+              </Border>
+              <TextBlock Text="后台并行下载与混流，完成后可一键复制文件、打开目录或播放" Style="{StaticResource SaltCaptionStyle}" TextWrapping="Wrap"/>
+            </StackPanel>
+          </Border>
         </Grid>
-      </DataTemplate></ListView.ItemTemplate>
-    </ListView>
-    <Button x:Name="MoreButton" Visibility="Collapsed" Content="加载更多视频" Click="More_Click"/>
-  </StackPanel></ScrollViewer>
+      </Border>
+
+      <!-- Results Control Card -->
+      <Border x:Name="ResultActions" Visibility="Collapsed" Style="{StaticResource SaltCardStyle}">
+        <StackPanel Spacing="14">
+          <Grid ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="ResultTitle" Visibility="Collapsed" Text="" Style="{StaticResource SaltCardTitleStyle}" VerticalAlignment="Center"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+              <Button Content="全选" Style="{StaticResource SaltCompactButtonStyle}" Click="SelectAll_Click"/>
+              <Button Content="取消全选" Style="{StaticResource SaltCompactButtonStyle}" Click="SelectNone_Click"/>
+            </StackPanel>
+          </Grid>
+
+          <Border Style="{StaticResource SaltInsetDividerStyle}" Margin="0"/>
+
+          <StackPanel Spacing="12">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+              <ComboBox x:Name="ModeBox" Header="下载内容" HorizontalAlignment="Left" SelectionChanged="Estimate_Changed">
+                <ComboBoxItem Content="按链接类型"/>
+                <ComboBoxItem Content="视频"/>
+                <ComboBoxItem Content="音频"/>
+              </ComboBox>
+              <ComboBox x:Name="ExportBox" Header="音频格式" Visibility="Collapsed" SelectedIndex="0" SelectionChanged="Estimate_Changed">
+                <ComboBoxItem Content="保留原音"/>
+                <ComboBoxItem Content="MP3"/>
+              </ComboBox>
+              <ComboBox x:Name="RateBox" Header="MP3 码率" Visibility="Collapsed" SelectedIndex="0" SelectionChanged="Estimate_Changed">
+                <ComboBoxItem Content="320 kb/s"/>
+                <ComboBoxItem Content="192 kb/s"/>
+                <ComboBoxItem Content="128 kb/s"/>
+              </ComboBox>
+            </StackPanel>
+            <ComboBox x:Name="QualityBox" Header="画质上限" MinWidth="180" MaxWidth="320" HorizontalAlignment="Left"
+                      DisplayMemberPath="DisplayLabel" SelectionChanged="Estimate_Changed" SelectedValuePath="Quality"/>
+            <TextBlock x:Name="SizeSummary" Visibility="Collapsed" Text="" Style="{StaticResource SaltCaptionStyle}" TextWrapping="Wrap"/>
+            <Button x:Name="DownloadButton" Content="下载选中内容" HorizontalAlignment="Left"
+                    Style="{StaticResource SaltPillAccentButtonStyle}" IsEnabled="False" Click="Download_Click"/>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- Results List -->
+      <ListView ContainerContentChanging="ResultContainer_Changing" SelectionChanged="Estimate_Changed"
+                x:Name="Results" Visibility="Collapsed" SelectionMode="Multiple" MaxHeight="1100">
+        <ListView.ItemContainerStyle>
+          <Style TargetType="ListViewItem">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
+            <Setter Property="CornerRadius" Value="14"/>
+          </Style>
+        </ListView.ItemContainerStyle>
+        <ListView.ItemTemplate>
+          <DataTemplate>
+            <Border Background="{ThemeResource SaltCardBackgroundBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="14" Padding="14">
+              <Grid ColumnSpacing="14">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <Border Visibility="{Binding CoverVisibility}" Width="132" Height="82" CornerRadius="10"
+                        Background="{ThemeResource SaltSubCardBackgroundBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+                        VerticalAlignment="Top">
+                  <Grid>
+                    <FontIcon Glyph="&#xE714;" FontSize="22" Foreground="{ThemeResource RadixSecondaryTextBrush}"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <Image Source="{Binding CoverImage}" Stretch="UniformToFill"/>
+                  </Grid>
+                </Border>
+
+                <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Border Style="{StaticResource SaltAccentPillBadgeStyle}" Padding="7,2">
+                      <TextBlock Text="{Binding PlatformLabel}" FontSize="11" FontWeight="SemiBold"
+                                 Foreground="{ThemeResource SaltAccentSoftForegroundBrush}"/>
+                    </Border>
+                    <Border Style="{StaticResource SaltPillBadgeStyle}" Padding="7,2">
+                      <TextBlock Text="{Binding KindLabel}" FontSize="11"
+                                 Foreground="{ThemeResource RadixSecondaryTextBrush}"/>
+                    </Border>
+                    <Border Style="{StaticResource SaltPillBadgeStyle}" Padding="7,2" Visibility="{Binding SizeVisibility}">
+                      <TextBlock Text="{Binding SizeText}" FontSize="11" FontWeight="Medium"/>
+                    </Border>
+                  </StackPanel>
+
+                  <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                  <TextBlock Text="{Binding PartTitle}" Visibility="{Binding PartTitleVisibility}"
+                             Style="{StaticResource SaltCaptionStyle}" TextWrapping="Wrap"/>
+
+                  <Border Visibility="{Binding PostTextVisibility}" Style="{StaticResource SaltSubCardStyle}" Padding="10,8">
+                    <TextBlock Text="{Binding PostText}" IsTextSelectionEnabled="True" TextWrapping="Wrap" FontSize="13"/>
+                  </Border>
+
+                  <TextBlock Text="{Binding FileName}" Style="{StaticResource SaltCaptionStyle}" TextWrapping="Wrap"/>
+
+                  <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2,0,0">
+                    <Button Content="{Binding GifLabel}" Visibility="{Binding GifVisibility}"
+                            Style="{StaticResource SaltCompactButtonStyle}" Tag="{Binding Id}" Click="GifFormat_Click"/>
+                    <Button Content="{Binding AudioChoice}" Visibility="{Binding AudioVisibility}"
+                            Style="{StaticResource SaltCompactButtonStyle}" Tag="{Binding Id}" Click="Track_Click"/>
+                    <Button Content="修改文件名" Style="{StaticResource SaltCompactButtonStyle}"
+                            AutomationProperties.AutomationId="{Binding Id}" Tag="{Binding Id}" Click="Rename_Click"/>
+                  </StackPanel>
+                </StackPanel>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ListView.ItemTemplate>
+      </ListView>
+
+      <Button x:Name="MoreButton" Visibility="Collapsed" Content="加载更多视频"
+              Style="{StaticResource SaltTonalButtonStyle}" HorizontalAlignment="Center" Click="More_Click"/>
+    </StackPanel>
+  </ScrollViewer>
 </Page>
